@@ -7,6 +7,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 import config
+from quota import can_upload, record_upload
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +44,22 @@ def get_authenticated_service():
 def upload_video(video_path: str, post: dict) -> str | None:
     """Upload a processed video to YouTube as a Short. Returns the video ID or None."""
     try:
+        if not can_upload():
+            logger.error("Daily YouTube API quota exhausted. Try again after midnight Pacific time.")
+            return None
+
         youtube = get_authenticated_service()
 
         title = post["title"][:100]  # YouTube title limit is 100 chars
 
+        author = post.get("author", "")
+        credit = f"Credit: u/{author}\n" if author and author not in ("[deleted]", "[unknown]") else ""
+
         description = (
             f"{post['title']}\n\n"
+            f"{credit}"
             f"Originally from r/{post['subreddit']}\n"
-            f"#Shorts"
+            f"#Shorts #reddit #r{post['subreddit']}"
         )
 
         tags = [
@@ -92,6 +101,7 @@ def upload_video(video_path: str, post: dict) -> str | None:
                 logger.info("Upload progress: %d%%", int(status.progress() * 100))
 
         video_id = response["id"]
+        record_upload()
         logger.info(
             "Upload complete: https://www.youtube.com/shorts/%s", video_id
         )

@@ -38,6 +38,11 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'history_page' %}active{% endif %}" href="/history">
+                            <i class="bi bi-archive"></i> History
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'settings_page' %}active{% endif %}" href="/settings">
                             <i class="bi bi-gear"></i> Settings
                         </a>

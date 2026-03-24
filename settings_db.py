@@ -12,7 +12,7 @@ DEFAULTS = {
     "POST_LIMIT": "20",
     "YOUTUBE_CLIENT_SECRETS_FILE": "client_secrets.json",
     "YOUTUBE_TOKEN_FILE": "youtube_token.json",
-    "VIDEOS_PER_DAY": "3",
+    "VIDEOS_PER_DAY": "6",
     "TEMP_DIR": "temp",
     "DB_PATH": "processed_posts.db",
     "LOG_FILE": "auto_youtuber.log",

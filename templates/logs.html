@@ -9,6 +9,7 @@
             <input class="form-check-input" type="checkbox" id="auto-scroll" checked>
             <label class="form-check-label" for="auto-scroll">Auto-scroll</label>
         </div>
+        <button class="btn btn-sm btn-outline-primary" id="copy-btn"><i class="bi bi-clipboard"></i> Copy All</button>
         <button class="btn btn-sm btn-outline-secondary" id="clear-btn"><i class="bi bi-trash"></i> Clear</button>
     </div>
 </div>
@@ -43,6 +44,15 @@ document.getElementById('clear-btn').addEventListener('click', () => {
     fetch('/api/logs/clear', { method: 'POST' }).then(() => {
         logArea.innerHTML = '';
         lastCount = 0;
+    });
+});
+
+document.getElementById('copy-btn').addEventListener('click', () => {
+    const text = logArea.innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
+        setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy All'; }, 2000);
     });
 });
 

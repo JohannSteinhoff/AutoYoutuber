@@ -1,13 +1,16 @@
 import logging
 import os
 import threading
+import uuid
 from collections import deque
-from dataclasses import dataclass, field
 from datetime import datetime
 
 import config
 from downloader import download_video, extract_post_from_url
+from history import save_upload
 from processor import process_video
+from queue_db import load_queue as db_load_queue, save_queue as db_save_queue
+from quota import can_upload, get_quota_info
 from scraper import fetch_video_posts, mark_processed
 from uploader import upload_video
 
@@ -15,8 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 class LogBuffer(logging.Handler):
-    """Ring-buffer logging handler for the web UI."""
-
     def __init__(self, capacity=500):
         super().__init__()
         self.buffer = deque(maxlen=capacity)
@@ -31,55 +32,69 @@ class LogBuffer(logging.Handler):
         self.buffer.clear()
 
 
-@dataclass
-class RunRecord:
-    timestamp: str
-    post_title: str
-    post_id: str
-    subreddit: str
-    success: bool
-    video_id: str | None = None
-    error: str | None = None
+class QueueItem:
+    """A single video in the queue."""
 
-
-@dataclass
-class PipelineStatus:
-    state: str = "idle"  # idle, scraping, downloading, processing, uploading, error
-    current_post: dict | None = None
-    message: str = ""
-    last_run: str | None = None
-    last_error: str | None = None
-    history: list = field(default_factory=list)
+    def __init__(self, post: dict):
+        self.uid = uuid.uuid4().hex[:8]
+        self.post = post
+        self.status = "queued"  # queued, downloading, processing, uploading, done, failed, skipped
+        self.progress = ""  # human-readable progress message
+        self.youtube_id: str | None = None
+        self.error: str | None = None
+        self.added_at = datetime.now().strftime("%H:%M:%S")
 
     def to_dict(self) -> dict:
         return {
-            "state": self.state,
-            "current_post": self.current_post,
-            "message": self.message,
-            "last_run": self.last_run,
-            "last_error": self.last_error,
-            "history": [
-                {
-                    "timestamp": r.timestamp,
-                    "post_title": r.post_title,
-                    "post_id": r.post_id,
-                    "subreddit": r.subreddit,
-                    "success": r.success,
-                    "video_id": r.video_id,
-                    "error": r.error,
-                }
-                for r in self.history[-20:]  # keep last 20
-            ],
+            "uid": self.uid,
+            "title": self.post.get("title", ""),
+            "subreddit": self.post.get("subreddit", ""),
+            "score": self.post.get("score", 0),
+            "duration": self.post.get("duration", 0),
+            "author": self.post.get("author", ""),
+            "status": self.status,
+            "progress": self.progress,
+            "youtube_id": self.youtube_id,
+            "error": self.error,
+            "added_at": self.added_at,
         }
+
+    def to_persist(self) -> dict:
+        """Dict for SQLite persistence."""
+        return {
+            "uid": self.uid,
+            "post": self.post,
+            "status": self.status,
+            "progress": self.progress,
+            "youtube_id": self.youtube_id,
+            "error": self.error,
+            "added_at": self.added_at,
+        }
+
+    @classmethod
+    def from_persist(cls, data: dict) -> "QueueItem":
+        """Restore a QueueItem from persisted data."""
+        item = cls.__new__(cls)
+        item.uid = data["uid"]
+        item.post = data["post"]
+        item.status = data["status"]
+        item.progress = data.get("progress", "")
+        item.youtube_id = data.get("youtube_id")
+        item.error = data.get("error")
+        item.added_at = data.get("added_at", "")
+        return item
 
 
 class PipelineRunner:
     def __init__(self):
-        self.status = PipelineStatus()
+        self.queue: list[QueueItem] = []
+        self.armed = False
+        self.state = "idle"  # idle, scraping, running
+        self.message = ""
+        self.last_run: str | None = None
         self.log_buffer = LogBuffer(capacity=500)
         self._thread: threading.Thread | None = None
 
-        # Attach log buffer to root logger
         formatter = logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
@@ -87,151 +102,267 @@ class PipelineRunner:
         self.log_buffer.setFormatter(formatter)
         logging.getLogger().addHandler(self.log_buffer)
 
+        # Restore persisted queue from SQLite
+        self._load_persisted_queue()
+
+    def _load_persisted_queue(self):
+        try:
+            rows = db_load_queue()
+            for row in rows:
+                self.queue.append(QueueItem.from_persist(row))
+            if self.queue:
+                logger.info("Restored %d items from persisted queue", len(self.queue))
+        except Exception:
+            logger.exception("Failed to load persisted queue")
+
+    def _persist_queue(self):
+        try:
+            db_save_queue([item.to_persist() for item in self.queue])
+        except Exception:
+            logger.exception("Failed to persist queue")
+
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def run_single(self, url: str) -> bool:
-        """Start processing a single URL in a background thread. Returns False if already running."""
+    # ── Queue management ───────────────────────────────────────────
+
+    def load_queue(self) -> bool:
+        """Scrape Reddit and fill the queue with top viral videos. Returns False if already busy."""
         if self.is_running():
             return False
-        self._thread = threading.Thread(target=self._execute_single, args=(url,), daemon=True)
+        self._thread = threading.Thread(target=self._scrape_to_queue, daemon=True)
         self._thread.start()
         return True
 
-    def run_pipeline(self):
-        """Run the automated scrape pipeline. Called by the scheduler or manually."""
+    def add_single_to_queue(self, url: str) -> bool:
+        """Extract a single URL and add it to the queue. Returns False if busy."""
         if self.is_running():
-            logger.warning("Pipeline already running, skipping")
-            return
-        self._thread = threading.Thread(target=self._execute_pipeline, daemon=True)
+            return False
+        self._thread = threading.Thread(target=self._extract_to_queue, args=(url,), daemon=True)
         self._thread.start()
+        return True
 
-    def _execute_single(self, url: str):
-        """Process a single Reddit URL: extract -> download -> process -> upload."""
-        self.status.state = "downloading"
-        self.status.message = "Extracting video info..."
-        self.status.last_error = None
+    def clear_queue(self):
+        """Remove all queued (not yet processed) items."""
+        self.queue = [item for item in self.queue if item.status not in ("queued",)]
+        self.armed = False
+        self._persist_queue()
 
+    def remove_from_queue(self, uid: str):
+        """Remove a specific item by uid if it's still queued."""
+        self.queue = [item for item in self.queue if not (item.uid == uid and item.status == "queued")]
+        self._persist_queue()
+
+    def arm(self):
+        """Arm the pipeline so it starts processing the queue."""
+        self.armed = True
+
+    def disarm(self):
+        """Disarm to prevent processing."""
+        self.armed = False
+
+    def start_processing(self) -> bool:
+        """Begin processing the armed queue. Returns False if already running or not armed."""
+        if self.is_running():
+            return False
+        if not self.armed:
+            return False
+        queued = [item for item in self.queue if item.status == "queued"]
+        if not queued:
+            return False
+        self._thread = threading.Thread(target=self._process_queue, daemon=True)
+        self._thread.start()
+        return True
+
+    # ── Status for API ─────────────────────────────────────────────
+
+    def get_status(self) -> dict:
+        return {
+            "state": self.state,
+            "message": self.message,
+            "armed": self.armed,
+            "last_run": self.last_run,
+            "queue": [item.to_dict() for item in self.queue],
+            "queue_summary": {
+                "total": len(self.queue),
+                "queued": sum(1 for i in self.queue if i.status == "queued"),
+                "done": sum(1 for i in self.queue if i.status == "done"),
+                "failed": sum(1 for i in self.queue if i.status == "failed"),
+                "active": sum(1 for i in self.queue if i.status in ("downloading", "processing", "uploading")),
+            },
+        }
+
+    # ── Internal: scrape to queue ──────────────────────────────────
+
+    def _scrape_to_queue(self):
+        self.state = "scraping"
+        self.message = "Finding top viral videos..."
         try:
             os.makedirs(config.TEMP_DIR, exist_ok=True)
 
-            post = extract_post_from_url(url)
-            if not post:
-                self.status.state = "error"
-                self.status.message = "Could not extract video from URL"
-                self.status.last_error = "Extraction failed — is this a Reddit video post?"
+            quota = get_quota_info()
+            slots = quota["max_uploads_remaining"]
+            if slots <= 0:
+                logger.warning("No API quota remaining today")
+                self.message = "Daily quota exhausted — no uploads remaining"
+                self.state = "idle"
                 return
 
-            self.status.current_post = {"title": post["title"], "subreddit": post["subreddit"], "id": post["id"]}
-            self._download_process_upload(post)
-
-        except Exception as e:
-            logger.exception("Single video pipeline failed")
-            self.status.state = "error"
-            self.status.message = str(e)
-            self.status.last_error = str(e)
-        finally:
-            if self.status.state != "error":
-                self.status.state = "idle"
-                self.status.message = ""
-            self.status.current_post = None
-            self.status.last_run = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    def _execute_pipeline(self):
-        """Run the full scrape -> download -> process -> upload pipeline."""
-        self.status.state = "scraping"
-        self.status.message = "Fetching video posts from Reddit..."
-        self.status.last_error = None
-
-        try:
-            os.makedirs(config.TEMP_DIR, exist_ok=True)
-            posts = fetch_video_posts()
+            target = min(config.VIDEOS_PER_DAY, slots)
+            posts = fetch_video_posts(count=target)
 
             if not posts:
                 logger.warning("No new video posts found")
-                self.status.message = "No new posts found"
-                self.status.state = "idle"
+                self.message = "No viral videos found"
+                self.state = "idle"
                 return
+
+            # Clear old queued items, keep done/failed for display
+            self.queue = [item for item in self.queue if item.status not in ("queued",)]
 
             for post in posts:
-                self.status.current_post = {"title": post["title"], "subreddit": post["subreddit"], "id": post["id"]}
-                self._download_process_upload(post)
-                # Only process one per scheduled run
-                return
+                self.queue.append(QueueItem(post))
+
+            logger.info("Queued %d videos for review", len(posts))
+            self.message = f"{len(posts)} videos queued — review and arm to start"
+            self.armed = False
+            self._persist_queue()
 
         except Exception as e:
-            logger.exception("Pipeline failed")
-            self.status.state = "error"
-            self.status.message = str(e)
-            self.status.last_error = str(e)
+            logger.exception("Scraping failed")
+            self.message = f"Scrape error: {e}"
         finally:
-            if self.status.state != "error":
-                self.status.state = "idle"
-                self.status.message = ""
-            self.status.current_post = None
-            self.status.last_run = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.state = "idle"
 
-    def _download_process_upload(self, post: dict):
-        """Shared download -> process -> upload logic."""
+    def _extract_to_queue(self, url: str):
+        self.state = "scraping"
+        self.message = "Extracting video info..."
+        try:
+            os.makedirs(config.TEMP_DIR, exist_ok=True)
+            post = extract_post_from_url(url)
+            if not post:
+                self.message = "Could not extract video from URL"
+                logger.error("Failed to extract: %s", url)
+                self.state = "idle"
+                return
+
+            self.queue.append(QueueItem(post))
+            logger.info("Added to queue: %s", post["title"][:60])
+            self.message = "Video added to queue"
+            self._persist_queue()
+
+        except Exception as e:
+            logger.exception("Extraction failed")
+            self.message = f"Error: {e}"
+        finally:
+            self.state = "idle"
+
+    # ── Internal: process queue ────────────────────────────────────
+
+    def _process_queue(self):
+        self.state = "running"
+        self.message = "Processing queue..."
+        queued_items = [item for item in self.queue if item.status == "queued"]
+
+        try:
+            os.makedirs(config.TEMP_DIR, exist_ok=True)
+
+            for i, item in enumerate(queued_items):
+                if not self.armed:
+                    logger.info("Pipeline disarmed, stopping after %d videos", i)
+                    # Mark remaining as skipped
+                    for remaining in queued_items[i:]:
+                        if remaining.status == "queued":
+                            remaining.status = "skipped"
+                            remaining.progress = "Disarmed"
+                    break
+
+                if not can_upload():
+                    logger.warning("Quota exhausted, stopping after %d uploads", i)
+                    item.status = "failed"
+                    item.error = "Quota exhausted"
+                    item.progress = "No API quota remaining"
+                    for remaining in queued_items[i + 1:]:
+                        if remaining.status == "queued":
+                            remaining.status = "skipped"
+                            remaining.progress = "Quota exhausted"
+                    break
+
+                self.message = f"Video {i + 1}/{len(queued_items)}"
+                self._process_item(item)
+                self._persist_queue()
+
+        except Exception as e:
+            logger.exception("Queue processing failed")
+            self.message = f"Error: {e}"
+        finally:
+            self.state = "idle"
+            self.armed = False
+            self.message = "Queue complete"
+            self.last_run = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self._persist_queue()
+
+    def _process_item(self, item: QueueItem):
+        post = item.post
         raw_path = None
         processed_path = None
 
         try:
             # Download
-            self.status.state = "downloading"
-            self.status.message = f"Downloading: {post['title'][:50]}"
+            item.status = "downloading"
+            item.progress = "Downloading video..."
             raw_path = download_video(post)
             if not raw_path:
-                self._record(post, success=False, error="Download failed")
+                item.status = "failed"
+                item.error = "Download failed"
+                item.progress = "Download failed"
+                save_upload(post, None, False, "Download failed")
                 mark_processed(post["id"])
                 return
 
             # Process
-            self.status.state = "processing"
-            self.status.message = f"Processing: {post['title'][:50]}"
+            item.status = "processing"
+            item.progress = "Reformatting to 9:16..."
             processed_path = process_video(raw_path, post)
             if not processed_path:
-                self._record(post, success=False, error="Processing failed")
+                item.status = "failed"
+                item.error = "FFmpeg processing failed"
+                item.progress = "Processing failed"
+                save_upload(post, None, False, "Processing failed")
                 mark_processed(post["id"])
                 return
 
             # Upload
-            self.status.state = "uploading"
-            self.status.message = f"Uploading: {post['title'][:50]}"
+            item.status = "uploading"
+            item.progress = "Uploading to YouTube..."
             video_id = upload_video(processed_path, post)
             if video_id:
-                self._record(post, success=True, video_id=video_id)
-                logger.info("Done! https://www.youtube.com/shorts/%s", video_id)
+                item.status = "done"
+                item.youtube_id = video_id
+                item.progress = f"youtube.com/shorts/{video_id}"
+                save_upload(post, video_id, True)
+                logger.info("Uploaded: %s -> %s", post["title"][:50], video_id)
             else:
-                self._record(post, success=False, error="Upload failed")
+                item.status = "failed"
+                item.error = "Upload failed"
+                item.progress = "Upload to YouTube failed"
+                save_upload(post, None, False, "Upload failed")
 
             mark_processed(post["id"])
 
+        except Exception as e:
+            logger.exception("Failed processing %s", post.get("title", "")[:50])
+            item.status = "failed"
+            item.error = str(e)
+            item.progress = f"Error: {e}"
+            save_upload(post, None, False, str(e))
         finally:
-            # Clean up temp files
             for path in [raw_path, processed_path]:
                 if path and os.path.exists(path):
                     try:
                         os.remove(path)
                     except OSError:
                         pass
-
-    def _record(self, post: dict, success: bool, video_id: str | None = None, error: str | None = None):
-        record = RunRecord(
-            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            post_title=post["title"],
-            post_id=post["id"],
-            subreddit=post["subreddit"],
-            success=success,
-            video_id=video_id,
-            error=error,
-        )
-        self.status.history.append(record)
-        if error:
-            self.status.last_error = error
-            logger.warning("Failed: %s — %s", post["title"][:50], error)
-        else:
-            logger.info("Success: %s -> %s", post["title"][:50], video_id)
 
 
 # Module-level singleton

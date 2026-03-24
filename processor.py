@@ -8,6 +8,15 @@ import config
 
 logger = logging.getLogger(__name__)
 
+# Use Windows Arial font directly to avoid fontconfig issues on WSL
+FONT_FILE = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "arial.ttf")
+if not os.path.exists(FONT_FILE):
+    # Fallback: try common locations
+    for candidate in [r"C:\Windows\Fonts\arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]:
+        if os.path.exists(candidate):
+            FONT_FILE = candidate
+            break
+
 
 def get_video_info(input_path: str) -> dict:
     """Get video dimensions and duration using ffprobe."""
@@ -57,32 +66,34 @@ def process_video(input_path: str, post: dict) -> str | None:
         # Escape characters that FFmpeg drawtext treats specially
         escaped_title = wrapped.replace("\\", "\\\\").replace("%", "%%")
 
+        # Escape the font path for FFmpeg (backslashes and colons)
+        font_escaped = FONT_FILE.replace("\\", "/").replace(":", "\\:")
+
         # Build filter graph
         is_landscape = src_w / src_h > (out_w / out_h)
+
+        drawtext = (
+            f"drawtext=fontfile='{font_escaped}':"
+            f"text='{escaped_title}':"
+            f"fontsize=42:fontcolor=white:borderw=3:bordercolor=black:"
+            f"x=(w-text_w)/2:y=80:line_spacing=10"
+        )
 
         if is_landscape:
             # Landscape source: create blurred background + centered sharp overlay
             filter_complex = (
-                # Blurred background scaled to fill 1080x1920
                 f"[0:v]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
                 f"crop={out_w}:{out_h},boxblur=20:5[bg];"
-                # Sharp foreground scaled to fit within 1080x1920
                 f"[0:v]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease[fg];"
-                # Overlay centered
                 f"[bg][fg]overlay=(W-w)/2:(H-h)/2,"
-                # Title text at top
-                f"drawtext=text='{escaped_title}':"
-                f"fontsize=42:fontcolor=white:borderw=3:bordercolor=black:"
-                f"x=(w-text_w)/2:y=80:line_spacing=10"
+                f"{drawtext}"
             )
         else:
             # Portrait/square source: scale to fit and pad
             filter_complex = (
                 f"[0:v]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,"
                 f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black,"
-                f"drawtext=text='{escaped_title}':"
-                f"fontsize=42:fontcolor=white:borderw=3:bordercolor=black:"
-                f"x=(w-text_w)/2:y=80:line_spacing=10"
+                f"{drawtext}"
             )
 
         # Build ffmpeg command

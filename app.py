@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 
@@ -5,7 +6,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 
 import config
+from history import get_history, get_history_count
 from pipeline_runner import runner
+from quota import get_quota_info
 from settings_db import get_all_settings, set_many_settings
 
 logger = logging.getLogger(__name__)
@@ -23,11 +26,14 @@ def start_scheduler():
     global _scheduler_running
     if _scheduler_running:
         return
-    interval_hours = 24 / max(config.VIDEOS_PER_DAY, 1)
+
+    def scheduled_run():
+        runner.load_queue()
+
     scheduler.add_job(
-        runner.run_pipeline,
+        scheduled_run,
         "interval",
-        hours=interval_hours,
+        hours=24,
         id="pipeline_job",
         max_instances=1,
         misfire_grace_time=3600,
@@ -36,7 +42,7 @@ def start_scheduler():
     if not scheduler.running:
         scheduler.start()
     _scheduler_running = True
-    logger.info("Scheduler started: every %.1f hours", interval_hours)
+    logger.info("Scheduler started: loads queue every 24 hours")
 
 
 def stop_scheduler():
@@ -49,14 +55,6 @@ def stop_scheduler():
         pass
     _scheduler_running = False
     logger.info("Scheduler stopped")
-
-
-def reschedule():
-    if not _scheduler_running:
-        return
-    interval_hours = 24 / max(config.VIDEOS_PER_DAY, 1)
-    scheduler.reschedule_job("pipeline_job", trigger="interval", hours=interval_hours)
-    logger.info("Scheduler rescheduled: every %.1f hours", interval_hours)
 
 
 def get_next_run_time() -> str | None:
@@ -79,13 +77,15 @@ def is_youtube_connected() -> bool:
 def dashboard():
     return render_template(
         "dashboard.html",
-        status=runner.status,
+        status=runner.get_status(),
         scheduler_running=_scheduler_running,
         pipeline_running=runner.is_running(),
-        interval_hours=round(24 / max(config.VIDEOS_PER_DAY, 1), 1),
         videos_per_day=config.VIDEOS_PER_DAY,
         next_run=get_next_run_time(),
         youtube_connected=is_youtube_connected(),
+        quota=get_quota_info(),
+        history=get_history(limit=20),
+        history_total=get_history_count(),
     )
 
 
@@ -111,11 +111,6 @@ def settings_save():
 
     set_many_settings(updates)
     config.reload()
-
-    # Reschedule if videos per day changed
-    if _scheduler_running:
-        reschedule()
-
     flash("Settings saved!", "success")
     return redirect(url_for("settings_page"))
 
@@ -133,21 +128,84 @@ def submit_url():
         return redirect(url_for("submit"))
 
     if runner.is_running():
-        flash("Pipeline is already running. Please wait.", "error")
+        flash("Pipeline is busy. Please wait.", "error")
         return redirect(url_for("dashboard"))
 
-    started = runner.run_single(url)
+    started = runner.add_single_to_queue(url)
     if started:
-        flash("Processing started! Check the dashboard for progress.", "success")
+        flash("Video added to queue. Arm the pipeline to start processing.", "success")
     else:
-        flash("Could not start pipeline.", "error")
+        flash("Could not add to queue.", "error")
 
     return redirect(url_for("dashboard"))
+
+
+@app.route("/history")
+def history_page():
+    return render_template("history.html", uploads=get_history(limit=100), total=get_history_count())
 
 
 @app.route("/logs")
 def logs_page():
     return render_template("logs.html", log_lines=runner.log_buffer.get_lines())
+
+
+# ── Queue & Pipeline controls ─────────────────────────────────────
+
+@app.route("/queue/burn", methods=["POST"])
+def queue_burn():
+    """Burn daily limit: scrape top viral videos and add to queue."""
+    if runner.is_running():
+        flash("Pipeline is busy.", "error")
+        return redirect(url_for("dashboard"))
+
+    started = runner.load_queue()
+    if started:
+        flash("Scraping top viral videos...", "success")
+    else:
+        flash("Could not start scraping.", "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/queue/arm", methods=["POST"])
+def queue_arm():
+    runner.arm()
+    flash("Pipeline armed! Click Start to begin processing.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/queue/disarm", methods=["POST"])
+def queue_disarm():
+    runner.disarm()
+    flash("Pipeline disarmed.", "info")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/queue/start", methods=["POST"])
+def queue_start():
+    if not runner.armed:
+        flash("Arm the pipeline first.", "error")
+        return redirect(url_for("dashboard"))
+
+    started = runner.start_processing()
+    if started:
+        flash("Processing started!", "success")
+    else:
+        flash("Could not start — is the pipeline already running or the queue empty?", "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/queue/clear", methods=["POST"])
+def queue_clear():
+    runner.clear_queue()
+    flash("Queue cleared.", "info")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/queue/remove/<uid>", methods=["POST"])
+def queue_remove(uid):
+    runner.remove_from_queue(uid)
+    return redirect(url_for("dashboard"))
 
 
 # ── Scheduler controls ─────────────────────────────────────────────
@@ -163,16 +221,6 @@ def scheduler_start():
 def scheduler_stop():
     stop_scheduler()
     flash("Scheduler stopped.", "success")
-    return redirect(url_for("dashboard"))
-
-
-@app.route("/scheduler/run-now", methods=["POST"])
-def scheduler_run_now():
-    if runner.is_running():
-        flash("Pipeline is already running.", "error")
-    else:
-        runner.run_pipeline()
-        flash("Pipeline run started.", "success")
     return redirect(url_for("dashboard"))
 
 
@@ -199,6 +247,7 @@ def oauth_start():
             prompt="consent",
         )
         session["oauth_state"] = state
+        session["oauth_code_verifier"] = flow.code_verifier
         return redirect(authorization_url)
 
     except Exception as e:
@@ -218,6 +267,7 @@ def oauth_callback():
             redirect_uri=url_for("oauth_callback", _external=True),
             state=session.get("oauth_state"),
         )
+        flow.code_verifier = session.get("oauth_code_verifier")
         flow.fetch_token(authorization_response=request.url)
         creds = flow.credentials
 
@@ -238,7 +288,17 @@ def oauth_callback():
 
 @app.route("/api/status")
 def api_status():
-    return jsonify(runner.status.to_dict())
+    return jsonify(runner.get_status())
+
+
+@app.route("/api/quota")
+def api_quota():
+    return jsonify(get_quota_info())
+
+
+@app.route("/api/history")
+def api_history():
+    return jsonify({"uploads": get_history(limit=20), "total": get_history_count()})
 
 
 @app.route("/api/logs")

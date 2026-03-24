@@ -2,141 +2,440 @@
 {% block title %}Dashboard — Auto Youtuber{% endblock %}
 
 {% block content %}
-<div class="row g-4 mb-4">
-    <!-- Pipeline Status -->
+<!-- Top status cards -->
+<div class="row g-3 mb-4">
+    <!-- API Quota -->
     <div class="col-md-4">
         <div class="card h-100">
             <div class="card-body">
-                <h5 class="card-title"><i class="bi bi-activity"></i> Pipeline</h5>
-                <p class="mb-1">Status: <span id="pipeline-state" class="badge status-badge bg-secondary">{{ status.state }}</span></p>
-                <p class="mb-1 text-muted small" id="pipeline-message">{{ status.message }}</p>
-                <p class="mb-0 text-muted small">Last run: <span id="last-run">{{ status.last_run or 'Never' }}</span></p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Scheduler Status -->
-    <div class="col-md-4">
-        <div class="card h-100">
-            <div class="card-body">
-                <h5 class="card-title"><i class="bi bi-clock"></i> Scheduler</h5>
-                <p class="mb-1">Status:
-                    <span id="sched-state" class="badge status-badge {{ 'bg-success' if scheduler_running else 'bg-secondary' }}">
-                        {{ 'Running' if scheduler_running else 'Stopped' }}
-                    </span>
-                </p>
-                <p class="mb-1 text-muted small">Interval: every {{ interval_hours }}h ({{ videos_per_day }} videos/day)</p>
-                <p class="mb-2 text-muted small">Next run: <span id="next-run">{{ next_run or 'N/A' }}</span></p>
-                <div class="d-flex gap-2">
-                    {% if scheduler_running %}
-                    <form method="POST" action="/scheduler/stop">
-                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-stop-circle"></i> Stop</button>
-                    </form>
-                    {% else %}
-                    <form method="POST" action="/scheduler/start">
-                        <button class="btn btn-sm btn-outline-success"><i class="bi bi-play-circle"></i> Start</button>
-                    </form>
-                    {% endif %}
-                    <form method="POST" action="/scheduler/run-now">
-                        <button class="btn btn-sm btn-outline-primary" {{ 'disabled' if pipeline_running }}><i class="bi bi-lightning"></i> Run Now</button>
-                    </form>
+                <h6 class="card-title text-muted"><i class="bi bi-speedometer"></i> API Quota</h6>
+                <div class="d-flex justify-content-between mb-1">
+                    <span class="small fw-bold"><span id="quota-uploads">{{ quota.uploads_today }}</span>/6 uploaded</span>
+                    <span class="small text-muted"><span id="quota-remaining-uploads">{{ quota.max_uploads_remaining }}</span> left</span>
                 </div>
+                <div class="progress mb-1" style="height: 10px;">
+                    <div id="quota-bar" class="progress-bar
+                        {% if quota.percent_used < 50 %}bg-success{% elif quota.percent_used < 80 %}bg-warning{% else %}bg-danger{% endif %}"
+                        style="width: {{ quota.percent_used }}%"></div>
+                </div>
+                <p class="mb-0 text-muted" style="font-size: 0.75rem;">
+                    <span id="quota-used">{{ quota.used }}</span>/{{ quota.daily_quota }} units — resets midnight PT
+                </p>
             </div>
         </div>
     </div>
 
-    <!-- YouTube Account -->
+    <!-- YouTube -->
     <div class="col-md-4">
         <div class="card h-100">
-            <div class="card-body">
-                <h5 class="card-title"><i class="bi bi-youtube"></i> YouTube</h5>
-                {% if youtube_connected %}
-                <p class="mb-1"><span class="badge bg-success status-badge">Connected</span></p>
-                <p class="text-muted small mb-2">Token saved and valid</p>
-                {% else %}
-                <p class="mb-1"><span class="badge bg-warning status-badge">Not Connected</span></p>
-                <p class="text-muted small mb-2">OAuth required to upload videos</p>
-                {% endif %}
+            <div class="card-body d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="card-title text-muted mb-1"><i class="bi bi-youtube"></i> YouTube</h6>
+                    {% if youtube_connected %}
+                    <span class="badge bg-success">Connected</span>
+                    {% else %}
+                    <span class="badge bg-warning">Not Connected</span>
+                    {% endif %}
+                </div>
                 <a href="/oauth/start" class="btn btn-sm btn-outline-danger">
-                    <i class="bi bi-box-arrow-in-right"></i> {{ 'Reconnect' if youtube_connected else 'Connect YouTube' }}
+                    <i class="bi bi-box-arrow-in-right"></i> {{ 'Reconnect' if youtube_connected else 'Connect' }}
                 </a>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Quick Submit -->
-<div class="card mb-4">
-    <div class="card-body">
-        <h5 class="card-title"><i class="bi bi-send"></i> Quick Submit</h5>
-        <form method="POST" action="/submit" class="d-flex gap-2">
-            <input type="text" name="url" class="form-control" placeholder="Paste a Reddit video URL..." required>
-            <button type="submit" class="btn btn-primary text-nowrap" id="submit-btn" {{ 'disabled' if pipeline_running }}>
-                <i class="bi bi-play-fill"></i> Process
-            </button>
-        </form>
+    <!-- Scheduler -->
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="card-title text-muted mb-1"><i class="bi bi-clock"></i> Scheduler</h6>
+                    <span class="badge {{ 'bg-success' if scheduler_running else 'bg-secondary' }}">
+                        {{ 'Running' if scheduler_running else 'Stopped' }}
+                    </span>
+                    {% if scheduler_running %}
+                    <span class="text-muted small ms-2">Next: {{ next_run or 'N/A' }}</span>
+                    {% endif %}
+                </div>
+                {% if scheduler_running %}
+                <form method="POST" action="/scheduler/stop">
+                    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-stop-circle"></i> Stop</button>
+                </form>
+                {% else %}
+                <form method="POST" action="/scheduler/start">
+                    <button class="btn btn-sm btn-outline-success"><i class="bi bi-play-circle"></i> Start</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 
-<!-- Recent Activity -->
-<div class="card">
+<!-- Main controls -->
+<div class="card mb-4">
     <div class="card-body">
-        <h5 class="card-title"><i class="bi bi-clock-history"></i> Recent Activity</h5>
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0" id="history-table">
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Title</th>
-                        <th>Subreddit</th>
-                        <th>Result</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for r in status.history | reverse %}
-                    <tr>
-                        <td class="text-muted small text-nowrap">{{ r.timestamp }}</td>
-                        <td>{{ r.post_title[:60] }}</td>
-                        <td>r/{{ r.subreddit }}</td>
-                        <td>
-                            {% if r.success %}
-                            <a href="https://www.youtube.com/shorts/{{ r.video_id }}" target="_blank" class="badge bg-success text-decoration-none">
-                                Uploaded <i class="bi bi-box-arrow-up-right"></i>
-                            </a>
-                            {% else %}
-                            <span class="badge bg-danger">{{ r.error }}</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="4" class="text-muted text-center">No activity yet</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="d-flex gap-2 align-items-center">
+                <form method="POST" action="/queue/burn">
+                    <button class="btn btn-danger" {{ 'disabled' if pipeline_running }}>
+                        <i class="bi bi-fire"></i> Burn Daily Limit
+                    </button>
+                </form>
+                <form method="POST" action="/submit" class="d-flex gap-2">
+                    <input type="text" name="url" class="form-control form-control-sm" placeholder="Or paste a Reddit URL..." style="width: 300px;">
+                    <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap" {{ 'disabled' if pipeline_running }}>
+                        <i class="bi bi-plus-lg"></i> Add
+                    </button>
+                </form>
+            </div>
+            <div class="d-flex gap-2" id="arm-controls">
+                {% set queued_count = status.queue_summary.queued %}
+                {% if not status.armed %}
+                <form method="POST" action="/queue/arm">
+                    <button class="btn btn-warning" {{ 'disabled' if queued_count == 0 }}>
+                        <i class="bi bi-shield-check"></i> Arm Pipeline ({{ queued_count }})
+                    </button>
+                </form>
+                {% else %}
+                <form method="POST" action="/queue/start">
+                    <button class="btn btn-success" {{ 'disabled' if pipeline_running }}>
+                        <i class="bi bi-play-fill"></i> Start Processing
+                    </button>
+                </form>
+                <form method="POST" action="/queue/disarm">
+                    <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-x"></i> Disarm</button>
+                </form>
+                {% endif %}
+                <form method="POST" action="/queue/clear">
+                    <button class="btn btn-outline-secondary btn-sm" {{ 'disabled' if pipeline_running }}>
+                        <i class="bi bi-trash"></i> Clear
+                    </button>
+                </form>
+            </div>
         </div>
+    </div>
+</div>
+
+<!-- Pipeline state banner -->
+<div id="state-banner" class="alert alert-info d-flex align-items-center mb-4 {{ 'd-none' if status.state == 'idle' }}" role="alert">
+    <div class="spinner-border spinner-border-sm me-2" role="status" id="state-spinner"></div>
+    <span id="state-message">{{ status.message }}</span>
+</div>
+
+<!-- Queue -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-list-check"></i> Queue</span>
+        <span class="badge bg-secondary" id="queue-count">{{ status.queue | length }} items</span>
+    </div>
+    <div class="card-body p-0" id="queue-container">
+        {% if status.queue %}
+        {% for item in status.queue %}
+        <div class="d-flex align-items-center border-bottom px-3 py-2 queue-item" data-uid="{{ item.uid }}">
+            <!-- Status icon -->
+            <div class="me-3" style="width: 32px; text-align: center;">
+                {% if item.status == 'queued' %}
+                <i class="bi bi-hourglass text-muted fs-5"></i>
+                {% elif item.status in ('downloading', 'processing', 'uploading') %}
+                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                {% elif item.status == 'done' %}
+                <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                {% elif item.status == 'failed' %}
+                <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+                {% elif item.status == 'skipped' %}
+                <i class="bi bi-skip-forward-fill text-muted fs-5"></i>
+                {% endif %}
+            </div>
+            <!-- Info -->
+            <div class="flex-grow-1 me-3">
+                <div class="fw-semibold" style="font-size: 0.9rem;">{{ item.title[:70] }}</div>
+                <div class="text-muted" style="font-size: 0.78rem;">
+                    r/{{ item.subreddit }}
+                    {% if item.author and item.author not in ('[deleted]', '[unknown]') %} · u/{{ item.author }}{% endif %}
+                    {% if item.score %} · {{ item.score }} pts{% endif %}
+                    {% if item.duration %} · {{ item.duration }}s{% endif %}
+                </div>
+            </div>
+            <!-- Status / progress -->
+            <div class="text-end me-2" style="min-width: 180px;">
+                {% if item.status == 'queued' %}
+                <span class="badge bg-secondary">Queued</span>
+                {% elif item.status == 'downloading' %}
+                <span class="badge bg-primary">Downloading...</span>
+                {% elif item.status == 'processing' %}
+                <span class="badge bg-warning text-dark">Processing...</span>
+                {% elif item.status == 'uploading' %}
+                <span class="badge bg-info">Uploading...</span>
+                {% elif item.status == 'done' %}
+                <a href="https://www.youtube.com/shorts/{{ item.youtube_id }}" target="_blank" class="badge bg-success text-decoration-none">
+                    Uploaded <i class="bi bi-box-arrow-up-right"></i>
+                </a>
+                {% elif item.status == 'failed' %}
+                <span class="badge bg-danger" title="{{ item.error }}">Failed</span>
+                {% elif item.status == 'skipped' %}
+                <span class="badge bg-secondary">Skipped</span>
+                {% endif %}
+                <div class="text-muted" style="font-size: 0.72rem;">{{ item.progress }}</div>
+            </div>
+            <!-- Remove button (only for queued items) -->
+            {% if item.status == 'queued' %}
+            <form method="POST" action="/queue/remove/{{ item.uid }}" class="ms-1">
+                <button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Remove"><i class="bi bi-x"></i></button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-center text-muted py-4" id="queue-empty">
+            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+            Queue is empty. Click <strong>Burn Daily Limit</strong> to find viral videos or paste a URL above.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- History (inline) -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-archive"></i> Upload History</span>
+        <span class="badge bg-secondary" id="history-count">{{ history_total }} uploaded</span>
+    </div>
+    <div class="table-responsive" id="history-container">
+        <table class="table table-sm table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Title</th>
+                    <th>Subreddit</th>
+                    <th>Author</th>
+                    <th>Score</th>
+                    <th>Duration</th>
+                    <th>Result</th>
+                </tr>
+            </thead>
+            <tbody id="history-body">
+                {% for u in history %}
+                <tr class="history-row">
+                    <td class="text-muted small text-nowrap">{{ u.uploaded_at }}</td>
+                    <td>
+                        {% if u.reddit_url %}
+                        <a href="{{ u.reddit_url }}" target="_blank" class="text-decoration-none">{{ u.title[:60] }}</a>
+                        {% else %}
+                        {{ u.title[:60] }}
+                        {% endif %}
+                    </td>
+                    <td>r/{{ u.subreddit }}</td>
+                    <td class="text-muted small">{% if u.author and u.author not in ('[deleted]', '[unknown]') %}u/{{ u.author }}{% endif %}</td>
+                    <td>{{ u.score }}</td>
+                    <td>{{ u.duration }}s</td>
+                    <td>
+                        {% if u.status == 'uploaded' and u.youtube_id %}
+                        <a href="https://www.youtube.com/shorts/{{ u.youtube_id }}" target="_blank" class="badge bg-success text-decoration-none">
+                            {{ u.youtube_id }} <i class="bi bi-box-arrow-up-right"></i>
+                        </a>
+                        {% elif u.status == 'failed' %}
+                        <span class="badge bg-danger" title="{{ u.error }}">Failed</span>
+                        {% else %}
+                        <span class="badge bg-secondary">{{ u.status }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr id="history-empty"><td colspan="7" class="text-muted text-center py-4">No uploads yet</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer text-center">
+        <a href="/history" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-list"></i> View Full History
+        </a>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
+<style>
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-30px); background-color: rgba(25, 135, 84, 0.15); }
+    to   { opacity: 1; transform: translateY(0); background-color: transparent; }
+}
+.history-row-new {
+    animation: slideDown 0.8s ease-out;
+}
+</style>
 <script>
-const stateColors = {
-    idle: 'bg-secondary', scraping: 'bg-info', downloading: 'bg-primary',
-    processing: 'bg-warning', uploading: 'bg-success', error: 'bg-danger'
+const statusIcons = {
+    queued: '<i class="bi bi-hourglass text-muted fs-5"></i>',
+    downloading: '<div class="spinner-border spinner-border-sm text-primary" role="status"></div>',
+    processing: '<div class="spinner-border spinner-border-sm text-warning" role="status"></div>',
+    uploading: '<div class="spinner-border spinner-border-sm text-info" role="status"></div>',
+    done: '<i class="bi bi-check-circle-fill text-success fs-5"></i>',
+    failed: '<i class="bi bi-x-circle-fill text-danger fs-5"></i>',
+    skipped: '<i class="bi bi-skip-forward-fill text-muted fs-5"></i>',
 };
+
+function badgeHtml(item) {
+    if (item.status === 'done' && item.youtube_id) {
+        return `<a href="https://www.youtube.com/shorts/${item.youtube_id}" target="_blank" class="badge bg-success text-decoration-none">Uploaded <i class="bi bi-box-arrow-up-right"></i></a>`;
+    }
+    const map = {
+        queued: 'bg-secondary">Queued',
+        downloading: 'bg-primary">Downloading...',
+        processing: 'bg-warning text-dark">Processing...',
+        uploading: 'bg-info">Uploading...',
+        failed: 'bg-danger">Failed',
+        skipped: 'bg-secondary">Skipped',
+    };
+    return `<span class="badge ${map[item.status] || 'bg-secondary">Unknown'}</span>`;
+}
+
+function esc(s) { return s.replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function renderQueue(queue) {
+    const container = document.getElementById('queue-container');
+    if (!queue.length) {
+        container.innerHTML = `<div class="text-center text-muted py-4"><i class="bi bi-inbox fs-3 d-block mb-2"></i>Queue is empty. Click <strong>Burn Daily Limit</strong> to find viral videos or paste a URL above.</div>`;
+        return;
+    }
+    let html = '';
+    queue.forEach(item => {
+        const title = esc(item.title || '').substring(0, 70);
+        const sub = esc(item.subreddit || '');
+        const author = item.author && !['[deleted]', '[unknown]'].includes(item.author) ? ` &middot; u/${esc(item.author)}` : '';
+        const pts = item.score ? ` &middot; ${item.score} pts` : '';
+        const dur = item.duration ? ` &middot; ${item.duration}s` : '';
+        const removeBtn = item.status === 'queued'
+            ? `<form method="POST" action="/queue/remove/${item.uid}" class="ms-1"><button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Remove"><i class="bi bi-x"></i></button></form>`
+            : '';
+        html += `
+        <div class="d-flex align-items-center border-bottom px-3 py-2 queue-item" data-uid="${item.uid}">
+            <div class="me-3" style="width:32px;text-align:center;">${statusIcons[item.status] || ''}</div>
+            <div class="flex-grow-1 me-3">
+                <div class="fw-semibold" style="font-size:0.9rem;">${title}</div>
+                <div class="text-muted" style="font-size:0.78rem;">r/${sub}${author}${pts}${dur}</div>
+            </div>
+            <div class="text-end me-2" style="min-width:180px;">
+                ${badgeHtml(item)}
+                <div class="text-muted" style="font-size:0.72rem;">${esc(item.progress || '')}</div>
+            </div>
+            ${removeBtn}
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+function updateArmControls(data) {
+    const el = document.getElementById('arm-controls');
+    const queued = data.queue_summary.queued;
+    const running = data.state === 'running' || data.state === 'scraping';
+
+    if (data.armed) {
+        el.innerHTML = `
+            <form method="POST" action="/queue/start">
+                <button class="btn btn-success" ${running ? 'disabled' : ''}><i class="bi bi-play-fill"></i> Start Processing</button>
+            </form>
+            <form method="POST" action="/queue/disarm">
+                <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-x"></i> Disarm</button>
+            </form>
+            <form method="POST" action="/queue/clear">
+                <button class="btn btn-outline-secondary btn-sm" ${running ? 'disabled' : ''}><i class="bi bi-trash"></i> Clear</button>
+            </form>`;
+    } else {
+        el.innerHTML = `
+            <form method="POST" action="/queue/arm">
+                <button class="btn btn-warning" ${queued === 0 ? 'disabled' : ''}><i class="bi bi-shield-check"></i> Arm Pipeline (${queued})</button>
+            </form>
+            <form method="POST" action="/queue/clear">
+                <button class="btn btn-outline-secondary btn-sm" ${running ? 'disabled' : ''}><i class="bi bi-trash"></i> Clear</button>
+            </form>`;
+    }
+}
+
+let knownHistoryIds = new Set();
+// Seed with server-rendered history
+document.querySelectorAll('#history-body tr[data-ytid]').forEach(r => knownHistoryIds.add(r.dataset.ytid));
+
+function renderHistory(uploads, total) {
+    const tbody = document.getElementById('history-body');
+    document.getElementById('history-count').textContent = total + ' uploaded';
+
+    if (!uploads.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center py-4">No uploads yet</td></tr>';
+        return;
+    }
+
+    let html = '';
+    uploads.forEach(u => {
+        const isNew = u.youtube_id && !knownHistoryIds.has(u.youtube_id);
+        const cls = isNew ? 'history-row-new' : '';
+        if (u.youtube_id) knownHistoryIds.add(u.youtube_id);
+
+        const title = esc(u.title || '').substring(0, 60);
+        const sub = esc(u.subreddit || '');
+        const authorStr = u.author && !['[deleted]', '[unknown]'].includes(u.author) ? `u/${esc(u.author)}` : '';
+        const titleCell = u.reddit_url
+            ? `<a href="${esc(u.reddit_url)}" target="_blank" class="text-decoration-none">${title}</a>`
+            : title;
+        let resultCell;
+        if (u.status === 'uploaded' && u.youtube_id) {
+            resultCell = `<a href="https://www.youtube.com/shorts/${esc(u.youtube_id)}" target="_blank" class="badge bg-success text-decoration-none">${esc(u.youtube_id)} <i class="bi bi-box-arrow-up-right"></i></a>`;
+        } else if (u.status === 'failed') {
+            resultCell = `<span class="badge bg-danger" title="${esc(u.error || '')}">Failed</span>`;
+        } else {
+            resultCell = `<span class="badge bg-secondary">${esc(u.status || '')}</span>`;
+        }
+
+        html += `<tr class="history-row ${cls}" data-ytid="${esc(u.youtube_id || '')}">
+            <td class="text-muted small text-nowrap">${esc(u.uploaded_at || '')}</td>
+            <td>${titleCell}</td>
+            <td>r/${sub}</td>
+            <td class="text-muted small">${authorStr}</td>
+            <td>${u.score || 0}</td>
+            <td>${u.duration || 0}s</td>
+            <td>${resultCell}</td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
 
 function poll() {
     fetch('/api/status').then(r => r.json()).then(data => {
-        const el = document.getElementById('pipeline-state');
-        el.textContent = data.state;
-        el.className = 'badge status-badge ' + (stateColors[data.state] || 'bg-secondary');
-        document.getElementById('pipeline-message').textContent = data.message || '';
-        document.getElementById('last-run').textContent = data.last_run || 'Never';
+        // State banner
+        const banner = document.getElementById('state-banner');
+        if (data.state === 'idle') {
+            banner.classList.add('d-none');
+        } else {
+            banner.classList.remove('d-none');
+            banner.className = 'alert d-flex align-items-center mb-4 ' + (data.state === 'scraping' ? 'alert-info' : 'alert-primary');
+            document.getElementById('state-message').textContent = data.message || '';
+        }
 
-        const btn = document.getElementById('submit-btn');
-        btn.disabled = data.state !== 'idle';
+        // Fully re-render queue from API data
+        renderQueue(data.queue);
+        document.getElementById('queue-count').textContent = data.queue.length + ' items';
+
+        // Update arm/start controls
+        updateArmControls(data);
+
+        // Disable burn button while running
+        const burnBtn = document.querySelector('[action="/queue/burn"] button');
+        if (burnBtn) burnBtn.disabled = (data.state !== 'idle');
+    });
+
+    fetch('/api/quota').then(r => r.json()).then(q => {
+        document.getElementById('quota-uploads').textContent = q.uploads_today;
+        document.getElementById('quota-remaining-uploads').textContent = q.max_uploads_remaining;
+        document.getElementById('quota-used').textContent = q.used;
+        const bar = document.getElementById('quota-bar');
+        bar.style.width = q.percent_used + '%';
+        bar.className = 'progress-bar ' + (q.percent_used < 50 ? 'bg-success' : q.percent_used < 80 ? 'bg-warning' : 'bg-danger');
+    });
+
+    fetch('/api/history').then(r => r.json()).then(h => {
+        renderHistory(h.uploads, h.total);
     });
 }
-setInterval(poll, 3000);
+setInterval(poll, 2000);
 </script>
 {% endblock %}
