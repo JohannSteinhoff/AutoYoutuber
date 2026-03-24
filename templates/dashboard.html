@@ -76,10 +76,12 @@
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div class="d-flex gap-2 align-items-center">
-                <form method="POST" action="/queue/burn">
+                <form method="POST" action="/queue/burn" class="d-flex gap-2 align-items-center">
                     <button class="btn btn-danger" {{ 'disabled' if pipeline_running }}>
-                        <i class="bi bi-fire"></i> Burn Daily Limit
+                        <i class="bi bi-search"></i> Find
                     </button>
+                    <input type="number" name="count" value="6" min="1" max="50" class="form-control form-control-sm" style="width: 70px;">
+                    <span class="text-muted small text-nowrap">videos</span>
                 </form>
                 <form method="POST" action="/submit" class="d-flex gap-2">
                     <input type="text" name="url" class="form-control form-control-sm" placeholder="Or paste a Reddit URL..." style="width: 300px;">
@@ -148,7 +150,9 @@
             </div>
             <!-- Info -->
             <div class="flex-grow-1 me-3">
-                <div class="fw-semibold" style="font-size: 0.9rem;">{{ item.title[:70] }}</div>
+                <div class="fw-semibold" style="font-size: 0.9rem;">
+                    {% if item.url %}<a href="{{ item.url }}" target="_blank" class="text-decoration-none">{{ item.title[:70] }}</a>{% else %}{{ item.title[:70] }}{% endif %}
+                </div>
                 <div class="text-muted" style="font-size: 0.78rem;">
                     r/{{ item.subreddit }}
                     {% if item.author and item.author not in ('[deleted]', '[unknown]') %} · u/{{ item.author }}{% endif %}
@@ -300,7 +304,10 @@ function renderQueue(queue) {
     }
     let html = '';
     queue.forEach(item => {
-        const title = esc(item.title || '').substring(0, 70);
+        const titleText = esc(item.title || '').substring(0, 70);
+        const titleHtml = item.url
+            ? `<a href="${esc(item.url)}" target="_blank" class="text-decoration-none">${titleText}</a>`
+            : titleText;
         const sub = esc(item.subreddit || '');
         const author = item.author && !['[deleted]', '[unknown]'].includes(item.author) ? ` &middot; u/${esc(item.author)}` : '';
         const pts = item.score ? ` &middot; ${item.score} pts` : '';
@@ -312,7 +319,7 @@ function renderQueue(queue) {
         <div class="d-flex align-items-center border-bottom px-3 py-2 queue-item" data-uid="${item.uid}">
             <div class="me-3" style="width:32px;text-align:center;">${statusIcons[item.status] || ''}</div>
             <div class="flex-grow-1 me-3">
-                <div class="fw-semibold" style="font-size:0.9rem;">${title}</div>
+                <div class="fw-semibold" style="font-size:0.9rem;">${titleHtml}</div>
                 <div class="text-muted" style="font-size:0.78rem;">r/${sub}${author}${pts}${dur}</div>
             </div>
             <div class="text-end me-2" style="min-width:180px;">

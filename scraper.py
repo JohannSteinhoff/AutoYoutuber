@@ -50,8 +50,8 @@ def fetch_video_posts(count: int = 6) -> list[dict]:
     video_posts = []
     max_dur = config.MAX_DURATION_SECONDS
 
-    # Always scrape "day" to get yesterday's top content
-    time_filter = "day"
+    # Top of all time for maximum viral potential
+    time_filter = "all"
     limit = min(config.POST_LIMIT, 100)
 
     for subreddit_name in config.SUBREDDITS:

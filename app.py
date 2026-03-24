@@ -159,9 +159,15 @@ def queue_burn():
         flash("Pipeline is busy.", "error")
         return redirect(url_for("dashboard"))
 
-    started = runner.load_queue()
+    try:
+        count = int(request.form.get("count", 6))
+        count = max(1, min(count, 50))
+    except (TypeError, ValueError):
+        count = 6
+
+    started = runner.load_queue(count=count)
     if started:
-        flash("Scraping top viral videos...", "success")
+        flash(f"Searching for {count} viral videos...", "success")
     else:
         flash("Could not start scraping.", "error")
     return redirect(url_for("dashboard"))

@@ -48,6 +48,7 @@ class QueueItem:
         return {
             "uid": self.uid,
             "title": self.post.get("title", ""),
+            "url": self.post.get("url", ""),
             "subreddit": self.post.get("subreddit", ""),
             "score": self.post.get("score", 0),
             "duration": self.post.get("duration", 0),
@@ -126,11 +127,11 @@ class PipelineRunner:
 
     # ── Queue management ───────────────────────────────────────────
 
-    def load_queue(self) -> bool:
+    def load_queue(self, count: int = 6) -> bool:
         """Scrape Reddit and fill the queue with top viral videos. Returns False if already busy."""
         if self.is_running():
             return False
-        self._thread = threading.Thread(target=self._scrape_to_queue, daemon=True)
+        self._thread = threading.Thread(target=self._scrape_to_queue, args=(count,), daemon=True)
         self._thread.start()
         return True
 
@@ -194,22 +195,13 @@ class PipelineRunner:
 
     # ── Internal: scrape to queue ──────────────────────────────────
 
-    def _scrape_to_queue(self):
+    def _scrape_to_queue(self, count: int = 6):
         self.state = "scraping"
-        self.message = "Finding top viral videos..."
+        self.message = f"Finding top {count} viral videos..."
         try:
             os.makedirs(config.TEMP_DIR, exist_ok=True)
 
-            quota = get_quota_info()
-            slots = quota["max_uploads_remaining"]
-            if slots <= 0:
-                logger.warning("No API quota remaining today")
-                self.message = "Daily quota exhausted — no uploads remaining"
-                self.state = "idle"
-                return
-
-            target = min(config.VIDEOS_PER_DAY, slots)
-            posts = fetch_video_posts(count=target)
+            posts = fetch_video_posts(count=count)
 
             if not posts:
                 logger.warning("No new video posts found")
