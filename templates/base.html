@@ -1,81 +1,155 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Auto Youtuber{% endblock %}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23FF0033'/%3E%3Cpolygon points='13,9 13,23 24,16' fill='white'/%3E%3C/svg%3E">
+    <meta property="og:title" content="Auto Youtuber">
+    <meta property="og:description" content="Automated Reddit-to-YouTube Shorts pipeline">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <!-- Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+
+    <!-- Custom Theme -->
+    <link href="/static/css/theme.css" rel="stylesheet">
+
     <style>
-        body { min-height: 100vh; display: flex; flex-direction: column; }
-        main { flex: 1; }
-        .status-badge { font-size: 0.9rem; }
-        .log-area { font-family: monospace; font-size: 0.82rem; max-height: 500px; overflow-y: auto; background: #1a1a2e; padding: 1rem; border-radius: 0.5rem; }
-        .log-area p { margin: 0; line-height: 1.5; }
-        .nav-link.active { font-weight: 600; }
+      body { opacity: 0; transition: opacity 0.3s ease; }
+      body.loaded { opacity: 1; }
     </style>
+
     {% block extra_head %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom mb-4">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="/">
-                <i class="bi bi-youtube text-danger"></i> Auto Youtuber
-            </a>
-            <a href="https://studio.youtube.com" target="_blank" class="btn btn-sm btn-outline-danger ms-2" title="Open YouTube Studio">
-                <i class="bi bi-box-arrow-up-right"></i> My Channel
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="/">
-                            <i class="bi bi-speedometer2"></i> Dashboard
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'submit' %}active{% endif %}" href="/submit">
-                            <i class="bi bi-send"></i> Submit
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'history_page' %}active{% endif %}" href="/history">
-                            <i class="bi bi-archive"></i> History
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'settings_page' %}active{% endif %}" href="/settings">
-                            <i class="bi bi-gear"></i> Settings
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'logs_page' %}active{% endif %}" href="/logs">
-                            <i class="bi bi-terminal"></i> Logs
-                        </a>
-                    </li>
-                </ul>
+    <!-- Confetti Canvas -->
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- Mobile Header -->
+    <div class="ay-mobile-header">
+        <button class="ay-mobile-toggle" id="mobile-toggle">
+            <i class="bi bi-list"></i>
+        </button>
+        <div class="ay-logo">
+            <div class="ay-logo-icon" id="mobile-logo-icon"><i class="bi bi-play-fill"></i></div>
+            <span>Auto Youtuber</span>
+        </div>
+        <div></div>
+    </div>
+
+    <!-- Sidebar Backdrop (mobile) -->
+    <div class="ay-sidebar-backdrop" id="sidebar-backdrop"></div>
+
+    <div class="ay-layout">
+        <!-- Sidebar -->
+        <aside class="ay-sidebar" id="sidebar">
+            <div class="ay-sidebar-header">
+                <div class="ay-logo">
+                    <div class="ay-logo-icon" id="logo-icon"><i class="bi bi-play-fill"></i></div>
+                    <span class="ay-logo-text">Auto Youtuber</span>
+                </div>
+                <button class="ay-sidebar-toggle" id="sidebar-toggle">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+            </div>
+
+            <nav class="ay-sidebar-nav">
+                <a href="/" class="ay-nav-item {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                    <i class="bi bi-grid-1x2-fill"></i>
+                    <span class="ay-nav-label">Dashboard</span>
+                </a>
+                <a href="/submit" class="ay-nav-item {% if request.endpoint == 'submit' %}active{% endif %}">
+                    <i class="bi bi-plus-circle"></i>
+                    <span class="ay-nav-label">Submit</span>
+                </a>
+                <a href="/history" class="ay-nav-item {% if request.endpoint == 'history_page' %}active{% endif %}">
+                    <i class="bi bi-clock-history"></i>
+                    <span class="ay-nav-label">History</span>
+                </a>
+                <a href="/settings" class="ay-nav-item {% if request.endpoint == 'settings_page' %}active{% endif %}">
+                    <i class="bi bi-gear"></i>
+                    <span class="ay-nav-label">Settings</span>
+                </a>
+                <a href="/logs" class="ay-nav-item {% if request.endpoint == 'logs_page' %}active{% endif %}">
+                    <i class="bi bi-terminal"></i>
+                    <span class="ay-nav-label">Logs</span>
+                </a>
+            </nav>
+
+            <div class="ay-sidebar-footer">
+                <a href="https://studio.youtube.com" target="_blank" class="ay-nav-item">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                    <span class="ay-nav-label">YouTube Studio</span>
+                </a>
+                <button class="ay-nav-item" onclick="AY.theme.toggle()">
+                    <i class="bi bi-moon-fill" id="theme-icon"></i>
+                    <span class="ay-nav-label" id="theme-label">Dark Mode</span>
+                </button>
+                <button class="ay-nav-item" onclick="let on=AY.sound.toggle(); AY.toast.show('Sounds '+(on?'enabled':'disabled'),'info',2000)">
+                    <i class="bi bi-volume-up"></i>
+                    <span class="ay-nav-label">Sounds</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="ay-main">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="ay-toast-container" id="toast-container"></div>
+
+    <!-- Flash messages as data elements for JS to pick up -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+        <div class="ay-flash-data hidden" data-message="{{ message }}" data-category="{{ 'success' if category == 'success' else 'error' if category == 'error' else 'info' }}"></div>
+        {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    <!-- Command Palette -->
+    <div class="ay-cmd-overlay" id="cmd-overlay">
+        <div class="ay-cmd-modal">
+            <div class="ay-cmd-input-wrap">
+                <i class="bi bi-search"></i>
+                <input type="text" class="ay-cmd-input" id="cmd-input" placeholder="Type a command..." autocomplete="off">
+                <span class="ay-cmd-kbd">esc</span>
+            </div>
+            <div class="ay-cmd-list" id="cmd-list"></div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="ay-modal-overlay" id="confirm-overlay" onclick="if(event.target===this)AY.confirm.hide()">
+        <div class="ay-modal">
+            <div class="ay-modal-title" id="confirm-title"></div>
+            <div class="ay-modal-body" id="confirm-body"></div>
+            <div class="ay-modal-actions">
+                <button class="ay-btn ay-btn-ghost" onclick="AY.confirm.hide()">Cancel</button>
+                <button class="ay-btn ay-btn-primary" id="confirm-btn">Confirm</button>
             </div>
         </div>
-    </nav>
+    </div>
 
-    <main class="container mb-5">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-            <div class="alert alert-{{ 'success' if category == 'success' else 'danger' if category == 'error' else 'info' }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-            {% endfor %}
-        {% endif %}
-        {% endwith %}
+    <!-- Shortcut Hint -->
+    <div class="ay-shortcut-hint">
+        <button class="ay-btn ay-btn-ghost ay-btn-sm" onclick="AY.cmd.open()" title="Command Palette">
+            <span class="ay-kbd">&#8984;K</span>
+        </button>
+    </div>
 
-        {% block content %}{% endblock %}
-    </main>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Core JS -->
+    <script src="/static/js/app.js"></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

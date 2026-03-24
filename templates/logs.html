@@ -2,61 +2,521 @@
 {% block title %}Logs — Auto Youtuber{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="bi bi-terminal"></i> Live Logs</h4>
-    <div class="d-flex gap-2 align-items-center">
-        <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" id="auto-scroll" checked>
-            <label class="form-check-label" for="auto-scroll">Auto-scroll</label>
-        </div>
-        <button class="btn btn-sm btn-outline-primary" id="copy-btn"><i class="bi bi-clipboard"></i> Copy All</button>
-        <button class="btn btn-sm btn-outline-secondary" id="clear-btn"><i class="bi bi-trash"></i> Clear</button>
-    </div>
+<!-- ═══ Page Header ═══ -->
+<div class="ay-page-header">
+  <div>
+    <h1 class="ay-page-title"><i class="bi bi-terminal"></i> Live Logs</h1>
+    <p style="color:var(--ay-text-muted);font-size:0.85rem;margin:4px 0 0;">
+      <span class="ay-badge ay-badge-gray" id="line-count-badge">{{ log_lines|length }} lines</span>
+      <span class="ay-badge ay-badge-red" id="error-count-badge" style="margin-left:4px;display:none;">0 errors</span>
+    </p>
+  </div>
 </div>
 
-<div class="log-area" id="log-area">
-    {% for line in log_lines %}
-    <p>{{ line }}</p>
-    {% endfor %}
+<!-- ═══ Log Card ═══ -->
+<div class="ay-card">
+  <!-- Toolbar -->
+  <div class="ay-card-header" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+    <!-- Level Filters -->
+    <div class="ay-log-filters">
+      <button class="ay-log-filter-btn active" data-level="ALL">ALL <span class="filter-count" id="fc-all">0</span></button>
+      <button class="ay-log-filter-btn" data-level="INFO">INFO <span class="filter-count" id="fc-info">0</span></button>
+      <button class="ay-log-filter-btn" data-level="WARNING">WARNING <span class="filter-count" id="fc-warning">0</span></button>
+      <button class="ay-log-filter-btn" data-level="ERROR">ERROR <span class="filter-count" id="fc-error">0</span></button>
+    </div>
+
+    <!-- Search -->
+    <div class="ay-search-wrap" style="flex:1;min-width:180px;max-width:320px;position:relative;">
+      <i class="bi bi-search"></i>
+      <input type="text" class="ay-search-input" id="log-search" placeholder="Filter logs...">
+      <span id="search-match-count" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:0.7rem;color:var(--ay-text-muted);pointer-events:none;"></span>
+    </div>
+
+    <!-- Regex Toggle -->
+    <button class="ay-btn ay-btn-ghost ay-btn-sm" id="regex-toggle" title="Toggle regex search">
+      <i class="bi bi-regex"></i>
+    </button>
+
+    <span style="flex:1;"></span>
+
+    <!-- Auto-scroll -->
+    <button class="ay-btn ay-btn-ghost ay-btn-sm active" id="autoscroll-toggle" title="Auto-scroll">
+      <i class="bi bi-arrow-down-circle"></i> Auto-scroll
+    </button>
+
+    <!-- Wrap Lines -->
+    <button class="ay-btn ay-btn-ghost ay-btn-sm" id="wrap-toggle" title="Wrap lines">
+      <i class="bi bi-text-wrap"></i> Wrap
+    </button>
+
+    <!-- Copy All -->
+    <button class="ay-btn ay-btn-ghost ay-btn-sm" id="copy-btn" title="Copy visible lines">
+      <i class="bi bi-clipboard"></i> Copy All
+    </button>
+
+    <!-- Clear -->
+    <button class="ay-btn ay-btn-ghost ay-btn-sm" id="clear-btn" title="Clear logs">
+      <i class="bi bi-trash"></i> Clear
+    </button>
+
+    <!-- Download -->
+    <a href="/api/logs/download" class="ay-btn ay-btn-ghost ay-btn-sm" title="Download log file">
+      <i class="bi bi-download"></i> Download
+    </a>
+  </div>
+
+  <!-- Log Area -->
+  <div class="ay-card-body" style="padding:0;">
+    <div class="ay-log-area ay-log-nowrap" id="log-area">
+      {# Server-rendered initial lines #}
+    </div>
+  </div>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-const logArea = document.getElementById('log-area');
-const autoScroll = document.getElementById('auto-scroll');
-let lastCount = {{ log_lines | length }};
+(function() {
+  'use strict';
 
-function pollLogs() {
-    fetch('/api/logs').then(r => r.json()).then(data => {
-        if (data.lines.length !== lastCount) {
-            logArea.innerHTML = data.lines.map(l => '<p>' + l.replace(/</g, '&lt;') + '</p>').join('');
-            lastCount = data.lines.length;
-            if (autoScroll.checked) {
-                logArea.scrollTop = logArea.scrollHeight;
-            }
+  // ── DOM refs ──
+  const logArea      = document.getElementById('log-area');
+  const searchInput  = document.getElementById('log-search');
+  const matchCount   = document.getElementById('search-match-count');
+  const regexToggle  = document.getElementById('regex-toggle');
+  const autoScrollBtn= document.getElementById('autoscroll-toggle');
+  const wrapBtn      = document.getElementById('wrap-toggle');
+  const copyBtn      = document.getElementById('copy-btn');
+  const clearBtn     = document.getElementById('clear-btn');
+  const lineCountBdg = document.getElementById('line-count-badge');
+  const errorCountBdg= document.getElementById('error-count-badge');
+  const filterBtns   = document.querySelectorAll('.ay-log-filter-btn');
+
+  // ── State ──
+  let autoScroll  = true;
+  let wrapLines   = false;
+  let regexMode   = false;
+  let lastCount   = 0;
+  let allLines    = [];  // raw strings
+  let activeFilters = new Set(); // empty means ALL
+
+  // ── Log line regex parser ──
+  const LOG_RE = /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+\[(\w+)\]\s+(.*)$/;
+
+  function parseLevel(raw) {
+    if (!raw) return 'INFO';
+    const u = raw.toUpperCase();
+    if (u === 'ERROR' || u === 'CRITICAL' || u === 'FATAL') return 'ERROR';
+    if (u === 'WARNING' || u === 'WARN') return 'WARNING';
+    if (u === 'DEBUG') return 'DEBUG';
+    return 'INFO';
+  }
+
+  function levelClass(level) {
+    switch (level) {
+      case 'ERROR':   return 'log-error';
+      case 'WARNING': return 'log-warning';
+      case 'DEBUG':   return 'log-debug';
+      default:        return 'log-info';
+    }
+  }
+
+  function relativeTime(dateStr) {
+    if (typeof AY !== 'undefined' && AY.timeago) return AY.timeago(dateStr);
+    try {
+      const d = new Date(dateStr.replace(' ', 'T'));
+      const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+      if (diff < 5) return 'just now';
+      if (diff < 60) return diff + 's ago';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+      return Math.floor(diff / 86400) + 'd ago';
+    } catch(e) { return dateStr; }
+  }
+
+  function esc(s) {
+    if (typeof AY !== 'undefined' && AY.esc) return AY.esc(s);
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // ── Build a log line element ──
+  function buildLogEl(raw) {
+    const div = document.createElement('div');
+    div.className = 'ay-log-line';
+    div.setAttribute('data-raw', raw);
+
+    const m = LOG_RE.exec(raw);
+    let ts = '', level = 'INFO', msg = raw;
+
+    if (m) {
+      ts = m[1];
+      level = parseLevel(m[2]);
+      msg = m[3];
+    }
+
+    // Success override
+    const lower = raw.toLowerCase();
+    if (lower.includes('uploaded') || lower.includes('success')) {
+      div.classList.add('log-success');
+    } else {
+      div.classList.add(levelClass(level));
+    }
+
+    div.setAttribute('data-level', level);
+
+    // Timestamp span
+    const tsSpan = document.createElement('span');
+    tsSpan.className = 'log-ts';
+    tsSpan.textContent = ts ? relativeTime(ts) : '';
+    if (ts) tsSpan.title = ts;
+    div.appendChild(tsSpan);
+
+    // Level span
+    const lvlSpan = document.createElement('span');
+    lvlSpan.className = 'log-level';
+    lvlSpan.textContent = level;
+    div.appendChild(lvlSpan);
+
+    // Message span
+    const msgSpan = document.createElement('span');
+    msgSpan.textContent = msg;
+    div.appendChild(msgSpan);
+
+    // Click to pin
+    div.addEventListener('click', function() {
+      div.classList.toggle('pinned');
+    });
+
+    return div;
+  }
+
+  // ── Collapsible stack traces ──
+  function processTracebacks(container) {
+    const lines = Array.from(container.children);
+    let i = 0;
+    while (i < lines.length) {
+      const el = lines[i];
+      const raw = el.getAttribute('data-raw') || '';
+      if (raw.startsWith('Traceback')) {
+        // Collect consecutive indented lines
+        const group = [el];
+        let j = i + 1;
+        while (j < lines.length) {
+          const nextRaw = lines[j].getAttribute('data-raw') || '';
+          if (nextRaw.match(/^\s/) || nextRaw.startsWith('Traceback')) {
+            group.push(lines[j]);
+            j++;
+          } else {
+            break;
+          }
         }
-    });
-}
-setInterval(pollLogs, 2000);
+        if (group.length > 1) {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'ay-log-traceback';
+          wrapper.style.cssText = 'border-left:2px solid var(--ay-danger);padding-left:6px;margin:2px 0;';
 
-document.getElementById('clear-btn').addEventListener('click', () => {
-    fetch('/api/logs/clear', { method: 'POST' }).then(() => {
-        logArea.innerHTML = '';
-        lastCount = 0;
-    });
-});
+          const toggleBtn = document.createElement('button');
+          toggleBtn.className = 'ay-btn ay-btn-ghost ay-btn-sm';
+          toggleBtn.style.cssText = 'font-size:0.7rem;margin-bottom:2px;padding:2px 6px;';
+          toggleBtn.innerHTML = '<i class="bi bi-chevron-right"></i> Show full error (' + group.length + ' lines)';
+          let expanded = false;
 
-document.getElementById('copy-btn').addEventListener('click', () => {
-    const text = logArea.innerText;
-    navigator.clipboard.writeText(text).then(() => {
-        const btn = document.getElementById('copy-btn');
-        btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
-        setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy All'; }, 2000);
-    });
-});
+          // Show first line, hide rest
+          group[0].style.display = '';
+          for (let k = 1; k < group.length; k++) {
+            group[k].style.display = 'none';
+            group[k].setAttribute('data-trace-hidden', '1');
+          }
 
-// Initial scroll to bottom
-logArea.scrollTop = logArea.scrollHeight;
+          toggleBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            expanded = !expanded;
+            for (let k = 1; k < group.length; k++) {
+              group[k].style.display = expanded ? '' : 'none';
+              if (expanded) group[k].removeAttribute('data-trace-hidden');
+              else group[k].setAttribute('data-trace-hidden', '1');
+            }
+            toggleBtn.innerHTML = expanded
+              ? '<i class="bi bi-chevron-down"></i> Hide full error'
+              : '<i class="bi bi-chevron-right"></i> Show full error (' + group.length + ' lines)';
+          });
+
+          // Insert wrapper before first group element
+          el.parentNode.insertBefore(wrapper, el);
+          wrapper.appendChild(toggleBtn);
+          for (const g of group) {
+            wrapper.appendChild(g);
+          }
+          i = j;
+          continue;
+        }
+      }
+      i++;
+    }
+  }
+
+  // ── Render initial lines ──
+  function renderInitial(lines) {
+    const frag = document.createDocumentFragment();
+    for (const raw of lines) {
+      frag.appendChild(buildLogEl(raw));
+    }
+    logArea.appendChild(frag);
+    processTracebacks(logArea);
+    updateCounts();
+    applyFilters();
+    if (autoScroll) logArea.scrollTop = logArea.scrollHeight;
+  }
+
+  // ── Append new lines ──
+  function appendLines(newLines) {
+    const frag = document.createDocumentFragment();
+    for (const raw of newLines) {
+      frag.appendChild(buildLogEl(raw));
+    }
+    logArea.appendChild(frag);
+    // Process tracebacks only on new lines (simplified: re-process all)
+    updateCounts();
+    applyFilters();
+    if (autoScroll) logArea.scrollTop = logArea.scrollHeight;
+  }
+
+  // ── Counts ──
+  function updateCounts() {
+    const all = logArea.querySelectorAll('.ay-log-line');
+    const total = all.length;
+    let errors = 0, warnings = 0, infos = 0;
+
+    all.forEach(function(el) {
+      const lv = el.getAttribute('data-level');
+      if (lv === 'ERROR') errors++;
+      else if (lv === 'WARNING') warnings++;
+      else if (lv === 'INFO') infos++;
+    });
+
+    lineCountBdg.textContent = total + ' lines';
+    if (errors > 0) {
+      errorCountBdg.textContent = errors + ' error' + (errors !== 1 ? 's' : '');
+      errorCountBdg.style.display = '';
+    } else {
+      errorCountBdg.style.display = 'none';
+    }
+
+    document.getElementById('fc-all').textContent = total;
+    document.getElementById('fc-info').textContent = infos;
+    document.getElementById('fc-warning').textContent = warnings;
+    document.getElementById('fc-error').textContent = errors;
+  }
+
+  // ── Filtering ──
+  function applyFilters() {
+    const query = searchInput.value;
+    let searchRe = null;
+    let searchStr = '';
+    let searchValid = true;
+
+    if (query) {
+      if (regexMode) {
+        try {
+          searchRe = new RegExp(query, 'i');
+        } catch(e) {
+          searchValid = false;
+        }
+      } else {
+        searchStr = query.toLowerCase();
+      }
+    }
+
+    const allEls = logArea.querySelectorAll('.ay-log-line');
+    let matchTotal = 0;
+    let visibleTotal = 0;
+
+    allEls.forEach(function(el) {
+      // Skip trace-hidden lines (handled by traceback toggle)
+      if (el.getAttribute('data-trace-hidden') === '1') return;
+
+      const lv = el.getAttribute('data-level');
+      const raw = el.getAttribute('data-raw') || '';
+
+      // Level filter
+      let levelPass = activeFilters.size === 0 || activeFilters.has(lv);
+
+      // Search filter
+      let searchPass = true;
+      if (query && searchValid) {
+        if (regexMode) {
+          searchPass = searchRe.test(raw);
+        } else {
+          searchPass = raw.toLowerCase().includes(searchStr);
+        }
+      }
+
+      if (levelPass && searchPass) {
+        el.style.display = '';
+        el.style.opacity = '1';
+        matchTotal++;
+      } else if (levelPass && !searchPass && query) {
+        // Dim non-matching search lines rather than hiding
+        el.style.display = '';
+        el.style.opacity = '0.2';
+      } else {
+        el.style.display = 'none';
+        el.style.opacity = '1';
+      }
+    });
+
+    // Update match count
+    if (query) {
+      matchCount.textContent = matchTotal + ' match' + (matchTotal !== 1 ? 'es' : '');
+    } else {
+      matchCount.textContent = '';
+    }
+  }
+
+  // ── Filter buttons ──
+  filterBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const level = btn.getAttribute('data-level');
+
+      if (level === 'ALL') {
+        // Activate ALL, deactivate others
+        activeFilters.clear();
+        filterBtns.forEach(function(b) {
+          b.classList.toggle('active', b.getAttribute('data-level') === 'ALL');
+        });
+      } else {
+        // Deactivate ALL
+        document.querySelector('.ay-log-filter-btn[data-level="ALL"]').classList.remove('active');
+
+        if (activeFilters.has(level)) {
+          activeFilters.delete(level);
+          btn.classList.remove('active');
+        } else {
+          activeFilters.add(level);
+          btn.classList.add('active');
+        }
+
+        // If none active, activate ALL
+        if (activeFilters.size === 0) {
+          document.querySelector('.ay-log-filter-btn[data-level="ALL"]').classList.add('active');
+        }
+      }
+
+      applyFilters();
+    });
+  });
+
+  // ── Search ──
+  searchInput.addEventListener('input', function() {
+    applyFilters();
+  });
+
+  // ── Regex toggle ──
+  regexToggle.addEventListener('click', function() {
+    regexMode = !regexMode;
+    regexToggle.classList.toggle('active', regexMode);
+    regexToggle.style.background = regexMode ? 'var(--ay-accent-soft)' : '';
+    regexToggle.style.color = regexMode ? 'var(--ay-accent)' : '';
+    regexToggle.style.borderColor = regexMode ? 'var(--ay-accent)' : '';
+    applyFilters();
+  });
+
+  // ── Auto-scroll toggle ──
+  autoScrollBtn.addEventListener('click', function() {
+    autoScroll = !autoScroll;
+    autoScrollBtn.classList.toggle('active', autoScroll);
+    autoScrollBtn.style.background = autoScroll ? 'var(--ay-accent-soft)' : '';
+    autoScrollBtn.style.color = autoScroll ? 'var(--ay-accent)' : '';
+    autoScrollBtn.style.borderColor = autoScroll ? 'var(--ay-accent)' : '';
+    if (autoScroll) logArea.scrollTop = logArea.scrollHeight;
+  });
+  // Set initial active style
+  autoScrollBtn.style.background = 'var(--ay-accent-soft)';
+  autoScrollBtn.style.color = 'var(--ay-accent)';
+  autoScrollBtn.style.borderColor = 'var(--ay-accent)';
+
+  // ── Wrap toggle ──
+  wrapBtn.addEventListener('click', function() {
+    wrapLines = !wrapLines;
+    wrapBtn.classList.toggle('active', wrapLines);
+    wrapBtn.style.background = wrapLines ? 'var(--ay-accent-soft)' : '';
+    wrapBtn.style.color = wrapLines ? 'var(--ay-accent)' : '';
+    wrapBtn.style.borderColor = wrapLines ? 'var(--ay-accent)' : '';
+    if (wrapLines) {
+      logArea.classList.remove('ay-log-nowrap');
+      logArea.classList.add('ay-log-wrap');
+    } else {
+      logArea.classList.remove('ay-log-wrap');
+      logArea.classList.add('ay-log-nowrap');
+    }
+  });
+
+  // ── Copy All ──
+  copyBtn.addEventListener('click', function() {
+    const visible = logArea.querySelectorAll('.ay-log-line');
+    const lines = [];
+    visible.forEach(function(el) {
+      if (el.style.display !== 'none' && el.style.opacity !== '0.2') {
+        lines.push(el.getAttribute('data-raw') || el.textContent);
+      }
+    });
+    navigator.clipboard.writeText(lines.join('\n')).then(function() {
+      copyBtn.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
+      setTimeout(function() {
+        copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy All';
+      }, 2000);
+    });
+  });
+
+  // ── Clear ──
+  clearBtn.addEventListener('click', function() {
+    fetch('/api/logs/clear', { method: 'POST' }).then(function() {
+      logArea.innerHTML = '';
+      allLines = [];
+      lastCount = 0;
+      updateCounts();
+      matchCount.textContent = '';
+      if (typeof AY !== 'undefined' && AY.toast) {
+        AY.toast.show('Logs cleared', 'success');
+      }
+    });
+  });
+
+  // ── Polling ──
+  function pollLogs() {
+    fetch('/api/logs')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        const lines = data.lines || [];
+        if (lines.length !== lastCount) {
+          if (lines.length > lastCount && lastCount > 0) {
+            // Append only new lines
+            const newLines = lines.slice(lastCount);
+            allLines = lines;
+            appendLines(newLines);
+          } else {
+            // Full re-render (lines were cleared or changed)
+            logArea.innerHTML = '';
+            allLines = lines;
+            renderInitial(lines);
+          }
+          lastCount = lines.length;
+        }
+      })
+      .catch(function() {});
+  }
+
+  // ── Initial render from server-provided lines ──
+  var initialLines = {{ log_lines | tojson }};
+  allLines = initialLines;
+  lastCount = initialLines.length;
+  renderInitial(initialLines);
+
+  // Start polling
+  setInterval(pollLogs, 2000);
+
+})();
 </script>
 {% endblock %}

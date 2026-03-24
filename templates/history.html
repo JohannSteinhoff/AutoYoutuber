@@ -1,58 +1,804 @@
 {% extends "base.html" %}
 {% block title %}Upload History — Auto Youtuber{% endblock %}
 
+{% block extra_head %}
+<style>
+  .ay-heatmap-labels {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-right: 6px;
+    padding-top: 22px;
+  }
+  .ay-heatmap-label {
+    height: 14px;
+    font-size: 0.65rem;
+    color: var(--ay-text-muted);
+    line-height: 14px;
+  }
+  .ay-heatmap-months {
+    display: flex;
+    gap: 3px;
+    margin-bottom: 4px;
+    padding-left: 30px;
+  }
+  .ay-heatmap-month {
+    font-size: 0.65rem;
+    color: var(--ay-text-muted);
+  }
+  .ay-heatmap-container {
+    display: flex;
+    align-items: flex-start;
+  }
+  .ay-date-range-btns {
+    display: flex;
+    gap: 4px;
+  }
+  .ay-date-range-btn {
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid var(--ay-border);
+    background: transparent;
+    color: var(--ay-text-secondary);
+    cursor: pointer;
+    transition: all var(--ay-transition);
+  }
+  .ay-date-range-btn:hover { border-color: var(--ay-border-hover); }
+  .ay-date-range-btn.active { background: var(--ay-accent-soft); color: var(--ay-accent); border-color: var(--ay-accent); }
+  .ay-view-toggle {
+    display: flex;
+    gap: 2px;
+    border: 1px solid var(--ay-border);
+    border-radius: var(--ay-radius-sm);
+    overflow: hidden;
+  }
+  .ay-view-btn {
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    color: var(--ay-text-muted);
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all var(--ay-transition);
+  }
+  .ay-view-btn:hover { color: var(--ay-text-primary); }
+  .ay-view-btn.active { background: var(--ay-accent-soft); color: var(--ay-accent); }
+  .ay-grid-card-wrap {
+    position: relative;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+  .ay-grid-card-wrap:hover { color: inherit; }
+  .ay-grid-badge-overlay {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
+  }
+  .ay-grid-thumb-placeholder {
+    width: 100%;
+    aspect-ratio: 16/9;
+    max-height: 160px;
+    background: var(--ay-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ay-text-muted);
+    font-size: 2rem;
+  }
+  .ay-pagination-info {
+    font-size: 0.78rem;
+    color: var(--ay-text-muted);
+    margin-right: auto;
+  }
+  .ay-insights {
+    font-size: 0.78rem;
+    color: var(--ay-text-muted);
+    margin-top: -16px;
+    margin-bottom: 20px;
+  }
+  .ay-insights strong {
+    color: var(--ay-text-secondary);
+  }
+  .ay-table-thumb {
+    width: 48px;
+    height: 27px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: var(--ay-border);
+    flex-shrink: 0;
+  }
+  .ay-table-thumb-placeholder {
+    width: 48px;
+    height: 27px;
+    border-radius: 4px;
+    background: var(--ay-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ay-text-muted);
+    font-size: 0.7rem;
+  }
+  .ay-retry-btn {
+    background: none;
+    border: none;
+    color: var(--ay-danger);
+    cursor: pointer;
+    font-size: 0.78rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all var(--ay-transition);
+  }
+  .ay-retry-btn:hover {
+    background: var(--ay-danger-soft);
+  }
+  .ay-studio-link {
+    color: var(--ay-text-muted);
+    font-size: 0.85rem;
+    transition: color var(--ay-transition);
+  }
+  .ay-studio-link:hover { color: var(--ay-accent); }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="bi bi-archive"></i> Upload History</h4>
-    <span class="badge bg-secondary">{{ total }} total uploads</span>
+<!-- Page Header -->
+<div class="ay-page-header">
+  <div class="ay-page-title">
+    <i class="bi bi-clock-history"></i>
+    Upload History
+    <span class="ay-badge ay-badge-gray">{{ total }}</span>
+  </div>
+  <button class="ay-btn ay-btn-ghost ay-btn-sm" id="export-csv-btn">
+    <i class="bi bi-download"></i> Export CSV
+  </button>
 </div>
 
-<div class="card">
-    <div class="table-responsive">
-        <table class="table table-sm table-hover mb-0">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Title</th>
-                    <th>Subreddit</th>
-                    <th>Author</th>
-                    <th>Score</th>
-                    <th>Duration</th>
-                    <th>Result</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for u in uploads %}
-                <tr>
-                    <td class="text-muted small text-nowrap">{{ u.uploaded_at }}</td>
-                    <td>
-                        {% if u.reddit_url %}
-                        <a href="{{ u.reddit_url }}" target="_blank" class="text-decoration-none">{{ u.title[:60] }}</a>
-                        {% else %}
-                        {{ u.title[:60] }}
-                        {% endif %}
-                    </td>
-                    <td>r/{{ u.subreddit }}</td>
-                    <td class="text-muted small">{% if u.author and u.author not in ('[deleted]', '[unknown]') %}u/{{ u.author }}{% endif %}</td>
-                    <td>{{ u.score }}</td>
-                    <td>{{ u.duration }}s</td>
-                    <td>
-                        {% if u.status == 'uploaded' and u.youtube_id %}
-                        <a href="https://www.youtube.com/shorts/{{ u.youtube_id }}" target="_blank" class="badge bg-success text-decoration-none">
-                            {{ u.youtube_id }} <i class="bi bi-box-arrow-up-right"></i>
-                        </a>
-                        {% elif u.status == 'failed' %}
-                        <span class="badge bg-danger" title="{{ u.error }}">Failed</span>
-                        {% else %}
-                        <span class="badge bg-secondary">{{ u.status }}</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% else %}
-                <tr><td colspan="7" class="text-muted text-center py-4">No uploads yet</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+<!-- Stats Summary -->
+<div class="ay-stats-grid" id="stats-grid">
+  <div class="ay-stat-card">
+    <div class="ay-stat-icon green"><i class="bi bi-cloud-upload"></i></div>
+    <div>
+      <div class="ay-stat-value" id="stat-uploaded">0</div>
+      <div class="ay-stat-label">Total Uploads</div>
     </div>
+  </div>
+  <div class="ay-stat-card">
+    <div class="ay-stat-icon blue"><i class="bi bi-calendar-week"></i></div>
+    <div>
+      <div class="ay-stat-value" id="stat-week">0</div>
+      <div class="ay-stat-label">This Week</div>
+    </div>
+  </div>
+  <div class="ay-stat-card">
+    <div class="ay-stat-icon yellow"><i class="bi bi-percent"></i></div>
+    <div>
+      <div class="ay-stat-value" id="stat-rate">0%</div>
+      <div class="ay-stat-label">Success Rate</div>
+    </div>
+  </div>
+  <div class="ay-stat-card">
+    <div class="ay-stat-icon red"><i class="bi bi-trophy"></i></div>
+    <div>
+      <div class="ay-stat-value" id="stat-top-sub">—</div>
+      <div class="ay-stat-label">Top Subreddit</div>
+    </div>
+  </div>
 </div>
+
+<!-- Aggregate Insights -->
+<div class="ay-insights" id="insights"></div>
+
+<!-- Calendar Heatmap -->
+<div class="ay-card mb-20">
+  <div class="ay-card-header">
+    <span><i class="bi bi-calendar3"></i> Upload Activity</span>
+  </div>
+  <div class="ay-card-body">
+    <div id="heatmap-months" class="ay-heatmap-months"></div>
+    <div class="ay-heatmap-container">
+      <div class="ay-heatmap-labels">
+        <div class="ay-heatmap-label"></div>
+        <div class="ay-heatmap-label">Mon</div>
+        <div class="ay-heatmap-label"></div>
+        <div class="ay-heatmap-label">Wed</div>
+        <div class="ay-heatmap-label"></div>
+        <div class="ay-heatmap-label">Fri</div>
+        <div class="ay-heatmap-label"></div>
+      </div>
+      <div class="ay-heatmap" id="heatmap"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="ay-filter-bar">
+  <div class="ay-search-wrap">
+    <i class="bi bi-search"></i>
+    <input type="text" class="ay-search-input" id="filter-search" placeholder="Search titles...">
+  </div>
+  <select class="ay-select" id="filter-subreddit">
+    <option value="">All Subreddits</option>
+  </select>
+  <select class="ay-select" id="filter-status">
+    <option value="">All Status</option>
+    <option value="uploaded">Uploaded</option>
+    <option value="failed">Failed</option>
+  </select>
+  <div class="ay-date-range-btns">
+    <button class="ay-date-range-btn" data-range="today">Today</button>
+    <button class="ay-date-range-btn" data-range="week">This Week</button>
+    <button class="ay-date-range-btn" data-range="month">This Month</button>
+    <button class="ay-date-range-btn active" data-range="all">All</button>
+  </div>
+  <div class="ay-view-toggle">
+    <button class="ay-view-btn active" data-view="table" title="Table view"><i class="bi bi-list"></i></button>
+    <button class="ay-view-btn" data-view="grid" title="Grid view"><i class="bi bi-grid-3x3-gap"></i></button>
+  </div>
+</div>
+
+<!-- Table View -->
+<div class="ay-card" id="table-view">
+  <div style="overflow-x:auto">
+    <table class="ay-table">
+      <thead>
+        <tr>
+          <th data-sort="thumb" style="cursor:default"></th>
+          <th data-sort="uploaded_at">Date <span class="sort-arrow"></span></th>
+          <th data-sort="title">Title <span class="sort-arrow"></span></th>
+          <th data-sort="subreddit">Subreddit <span class="sort-arrow"></span></th>
+          <th data-sort="author">Author <span class="sort-arrow"></span></th>
+          <th data-sort="score">Score <span class="sort-arrow"></span></th>
+          <th data-sort="duration">Duration <span class="sort-arrow"></span></th>
+          <th data-sort="status">Result <span class="sort-arrow"></span></th>
+          <th style="cursor:default"></th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+  <div class="ay-pagination" id="pagination"></div>
+</div>
+
+<!-- Grid View (hidden by default) -->
+<div id="grid-view" class="hidden">
+  <div class="ay-grid" id="grid-body"></div>
+  <div class="ay-card mt-16">
+    <div class="ay-pagination" id="pagination-grid"></div>
+  </div>
+</div>
+
+<!-- Empty State -->
+<div class="ay-empty hidden" id="empty-state">
+  <div class="ay-empty-icon"><i class="bi bi-inbox"></i></div>
+  <div class="ay-empty-title">No uploads found</div>
+  <div class="ay-empty-text">There are no uploads matching your current filters. Try adjusting your search or submit some videos to get started.</div>
+  <a href="/submit" class="ay-btn ay-btn-primary"><i class="bi bi-plus-circle"></i> Submit a Video</a>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+  // ── Data ────────────────────────────────────────────────────
+  const ALL_UPLOADS = [
+    {% for u in uploads %}
+    {
+      post_id: {{ u.post_id|tojson }},
+      title: {{ u.title|tojson }},
+      subreddit: {{ u.subreddit|tojson }},
+      reddit_url: {{ u.reddit_url|tojson if u.reddit_url else 'null' }},
+      youtube_id: {{ u.youtube_id|tojson if u.youtube_id else 'null' }},
+      score: {{ u.score|int }},
+      duration: {{ u.duration|int }},
+      status: {{ u.status|tojson }},
+      error: {{ u.error|tojson if u.error else 'null' }},
+      uploaded_at: {{ u.uploaded_at|tojson }},
+      author: {{ u.author|tojson if u.author else 'null' }}
+    }{{ "," if not loop.last }}
+    {% endfor %}
+  ];
+
+  const PER_PAGE = 25;
+  let currentPage = 1;
+  let currentSort = { key: 'uploaded_at', dir: 'desc' };
+  let currentView = 'table';
+  let filteredData = [];
+
+  // ── Stats Computation ───────────────────────────────────────
+  function computeStats() {
+    const uploaded = ALL_UPLOADS.filter(u => u.status === 'uploaded').length;
+    const total = ALL_UPLOADS.length;
+    const rate = total > 0 ? Math.round((uploaded / total) * 100) : 0;
+
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const thisWeek = ALL_UPLOADS.filter(u => {
+      const d = new Date(u.uploaded_at.replace(' ', 'T'));
+      return d >= weekAgo;
+    }).length;
+
+    const subCounts = {};
+    ALL_UPLOADS.forEach(u => {
+      subCounts[u.subreddit] = (subCounts[u.subreddit] || 0) + 1;
+    });
+    let topSub = '—';
+    let topCount = 0;
+    for (const [sub, count] of Object.entries(subCounts)) {
+      if (count > topCount) { topCount = count; topSub = sub; }
+    }
+
+    document.getElementById('stat-uploaded').textContent = uploaded;
+    document.getElementById('stat-week').textContent = thisWeek;
+    document.getElementById('stat-rate').textContent = rate + '%';
+    document.getElementById('stat-top-sub').textContent = topSub !== '—' ? 'r/' + topSub : '—';
+
+    // Insights
+    const insightsEl = document.getElementById('insights');
+    if (topSub !== '—') {
+      const subUploads = ALL_UPLOADS.filter(u => u.subreddit === topSub);
+      const subSuccess = subUploads.filter(u => u.status === 'uploaded').length;
+      const subRate = subUploads.length > 0 ? Math.round((subSuccess / subUploads.length) * 100) : 0;
+      insightsEl.innerHTML = 'Best source: <strong>r/' + AY.esc(topSub) + '</strong> (' + subUploads.length + ' uploads, ' + subRate + '% success rate)';
+    } else {
+      insightsEl.textContent = '';
+    }
+  }
+
+  // ── Subreddit Dropdown Population ───────────────────────────
+  function populateSubreddits() {
+    const sel = document.getElementById('filter-subreddit');
+    const subs = [...new Set(ALL_UPLOADS.map(u => u.subreddit))].sort();
+    subs.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = 'r/' + s;
+      sel.appendChild(opt);
+    });
+  }
+
+  // ── Calendar Heatmap ────────────────────────────────────────
+  function buildHeatmap() {
+    const heatmapEl = document.getElementById('heatmap');
+    const monthsEl = document.getElementById('heatmap-months');
+
+    // Count uploads per date
+    const dateCounts = {};
+    ALL_UPLOADS.forEach(u => {
+      const dateStr = u.uploaded_at.replace(' ', 'T').split('T')[0];
+      dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
+    });
+
+    // Build 12 weeks of days ending today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Find the start: go back 12 weeks from end of this week
+    const dayOfWeek = today.getDay(); // 0=Sun
+    const endOfWeek = new Date(today);
+    endOfWeek.setDate(endOfWeek.getDate() + (6 - dayOfWeek));
+    const startDate = new Date(endOfWeek);
+    startDate.setDate(startDate.getDate() - (12 * 7) + 1);
+
+    // Track months for labels
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthPositions = [];
+    let lastMonth = -1;
+
+    let current = new Date(startDate);
+    let weekEl = null;
+    let weekIndex = 0;
+
+    while (current <= endOfWeek) {
+      const dow = current.getDay();
+      if (dow === 0) {
+        weekEl = document.createElement('div');
+        weekEl.className = 'ay-heatmap-week';
+        heatmapEl.appendChild(weekEl);
+
+        if (current.getMonth() !== lastMonth) {
+          monthPositions.push({ month: monthNames[current.getMonth()], weekIndex: weekIndex });
+          lastMonth = current.getMonth();
+        }
+        weekIndex++;
+      }
+
+      if (!weekEl) {
+        weekEl = document.createElement('div');
+        weekEl.className = 'ay-heatmap-week';
+        heatmapEl.appendChild(weekEl);
+        // Add blank days for the first partial week
+        for (let i = 0; i < dow; i++) {
+          const blank = document.createElement('div');
+          blank.className = 'ay-heatmap-day';
+          blank.style.visibility = 'hidden';
+          weekEl.appendChild(blank);
+        }
+        if (current.getMonth() !== lastMonth) {
+          monthPositions.push({ month: monthNames[current.getMonth()], weekIndex: weekIndex });
+          lastMonth = current.getMonth();
+        }
+        weekIndex++;
+      }
+
+      const dateKey = current.toISOString().split('T')[0];
+      const count = dateCounts[dateKey] || 0;
+      const day = document.createElement('div');
+      day.className = 'ay-heatmap-day';
+      if (count >= 4) day.classList.add('l4');
+      else if (count === 3) day.classList.add('l3');
+      else if (count === 2) day.classList.add('l2');
+      else if (count === 1) day.classList.add('l1');
+      day.title = dateKey + ': ' + count + ' upload' + (count !== 1 ? 's' : '');
+      weekEl.appendChild(day);
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    // Month labels
+    monthPositions.forEach(mp => {
+      const span = document.createElement('span');
+      span.className = 'ay-heatmap-month';
+      span.textContent = mp.month;
+      span.style.marginLeft = (mp.weekIndex * 17) + 'px';
+      span.style.position = 'absolute';
+      monthsEl.appendChild(span);
+    });
+    monthsEl.style.position = 'relative';
+    monthsEl.style.height = '16px';
+  }
+
+  // ── Filtering ───────────────────────────────────────────────
+  function getFiltered() {
+    const search = document.getElementById('filter-search').value.toLowerCase();
+    const subreddit = document.getElementById('filter-subreddit').value;
+    const status = document.getElementById('filter-status').value;
+    const rangeBtn = document.querySelector('.ay-date-range-btn.active');
+    const range = rangeBtn ? rangeBtn.dataset.range : 'all';
+
+    const now = new Date();
+    let startDate = null;
+    if (range === 'today') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    } else if (range === 'week') {
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 7);
+    } else if (range === 'month') {
+      startDate = new Date(now);
+      startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    return ALL_UPLOADS.filter(u => {
+      if (search && !u.title.toLowerCase().includes(search)) return false;
+      if (subreddit && u.subreddit !== subreddit) return false;
+      if (status && u.status !== status) return false;
+      if (startDate) {
+        const d = new Date(u.uploaded_at.replace(' ', 'T'));
+        if (d < startDate) return false;
+      }
+      return true;
+    });
+  }
+
+  // ── Sorting ─────────────────────────────────────────────────
+  function sortData(data) {
+    const key = currentSort.key;
+    const dir = currentSort.dir === 'asc' ? 1 : -1;
+
+    return data.slice().sort((a, b) => {
+      let va = a[key], vb = b[key];
+      if (key === 'uploaded_at') {
+        va = new Date(va.replace(' ', 'T')).getTime();
+        vb = new Date(vb.replace(' ', 'T')).getTime();
+      } else if (key === 'score' || key === 'duration') {
+        va = Number(va) || 0;
+        vb = Number(vb) || 0;
+      } else {
+        va = (va || '').toString().toLowerCase();
+        vb = (vb || '').toString().toLowerCase();
+      }
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+  }
+
+  // ── Render Table ────────────────────────────────────────────
+  function renderTable(data, page) {
+    const tbody = document.getElementById('table-body');
+    const start = (page - 1) * PER_PAGE;
+    const pageData = data.slice(start, start + PER_PAGE);
+
+    if (data.length === 0) {
+      tbody.innerHTML = '';
+      document.getElementById('table-view').classList.add('hidden');
+      document.getElementById('grid-view').classList.add('hidden');
+      document.getElementById('empty-state').classList.remove('hidden');
+      return;
+    }
+
+    document.getElementById('empty-state').classList.add('hidden');
+    if (currentView === 'table') {
+      document.getElementById('table-view').classList.remove('hidden');
+      document.getElementById('grid-view').classList.add('hidden');
+    }
+
+    let html = '';
+    pageData.forEach(u => {
+      const thumbHtml = u.youtube_id
+        ? '<img class="ay-table-thumb" src="https://img.youtube.com/vi/' + AY.esc(u.youtube_id) + '/default.jpg" alt="" loading="lazy">'
+        : '<div class="ay-table-thumb-placeholder"><i class="bi bi-film"></i></div>';
+
+      const timeAgo = AY.timeago(u.uploaded_at);
+      const fullDate = u.uploaded_at;
+      const truncTitle = u.title.length > 60 ? u.title.substring(0, 60) + '...' : u.title;
+      const titleHtml = u.reddit_url
+        ? '<a href="' + AY.esc(u.reddit_url) + '" target="_blank">' + AY.esc(truncTitle) + '</a>'
+        : AY.esc(truncTitle);
+
+      const subColor = AY.getSubColor(u.subreddit);
+      const authorDisplay = u.author && u.author !== '[deleted]' && u.author !== '[unknown]'
+        ? 'u/' + AY.esc(u.author)
+        : '';
+
+      let resultHtml = '';
+      if (u.status === 'uploaded' && u.youtube_id) {
+        resultHtml = '<a href="https://www.youtube.com/shorts/' + AY.esc(u.youtube_id) + '" target="_blank" class="ay-badge ay-badge-green" style="text-decoration:none">' +
+          '<i class="bi bi-check-circle"></i> Uploaded</a>';
+      } else if (u.status === 'failed') {
+        resultHtml = '<span class="ay-badge ay-badge-red" title="' + AY.esc(u.error || 'Unknown error') + '">' +
+          '<i class="bi bi-x-circle"></i> Failed</span>' +
+          ' <button class="ay-retry-btn" title="Retry" onclick="AY.toast.show(\'Retry not yet implemented\',\'info\',2000)"><i class="bi bi-arrow-clockwise"></i></button>';
+      } else {
+        resultHtml = '<span class="ay-badge ay-badge-gray">' + AY.esc(u.status) + '</span>';
+      }
+
+      let studioHtml = '';
+      if (u.status === 'uploaded' && u.youtube_id) {
+        studioHtml = '<a href="https://studio.youtube.com/video/' + AY.esc(u.youtube_id) + '/edit" target="_blank" class="ay-studio-link" title="Open in YouTube Studio"><i class="bi bi-box-arrow-up-right"></i></a>';
+      }
+
+      html += '<tr>' +
+        '<td>' + thumbHtml + '</td>' +
+        '<td class="nowrap fs-sm text-muted" title="' + AY.esc(fullDate) + '" data-sort-value="' + AY.esc(u.uploaded_at) + '">' + timeAgo + '</td>' +
+        '<td>' + titleHtml + '</td>' +
+        '<td><span class="ay-subreddit-pill ' + subColor + '">r/' + AY.esc(u.subreddit) + '</span></td>' +
+        '<td class="fs-sm text-muted">' + authorDisplay + '</td>' +
+        '<td>' + u.score + '</td>' +
+        '<td class="nowrap">' + u.duration + 's</td>' +
+        '<td>' + resultHtml + '</td>' +
+        '<td>' + studioHtml + '</td>' +
+        '</tr>';
+    });
+
+    tbody.innerHTML = html;
+  }
+
+  // ── Render Grid ─────────────────────────────────────────────
+  function renderGrid(data, page) {
+    const gridBody = document.getElementById('grid-body');
+    const start = (page - 1) * PER_PAGE;
+    const pageData = data.slice(start, start + PER_PAGE);
+
+    if (data.length === 0) {
+      gridBody.innerHTML = '';
+      document.getElementById('table-view').classList.add('hidden');
+      document.getElementById('grid-view').classList.add('hidden');
+      document.getElementById('empty-state').classList.remove('hidden');
+      return;
+    }
+
+    document.getElementById('empty-state').classList.add('hidden');
+    if (currentView === 'grid') {
+      document.getElementById('grid-view').classList.remove('hidden');
+      document.getElementById('table-view').classList.add('hidden');
+    }
+
+    let html = '';
+    pageData.forEach(u => {
+      const link = u.youtube_id
+        ? 'https://www.youtube.com/shorts/' + AY.esc(u.youtube_id)
+        : (u.reddit_url || '#');
+      const thumbHtml = u.youtube_id
+        ? '<img class="ay-grid-thumb" src="https://img.youtube.com/vi/' + AY.esc(u.youtube_id) + '/hqdefault.jpg" alt="" loading="lazy">'
+        : '<div class="ay-grid-thumb-placeholder"><i class="bi bi-film"></i></div>';
+
+      const badgeHtml = u.status === 'uploaded'
+        ? '<span class="ay-badge ay-badge-green"><i class="bi bi-check-circle"></i> Uploaded</span>'
+        : '<span class="ay-badge ay-badge-red"><i class="bi bi-x-circle"></i> Failed</span>';
+
+      const subColor = AY.getSubColor(u.subreddit);
+
+      html += '<a class="ay-grid-card-wrap" href="' + AY.esc(link) + '" target="_blank">' +
+        '<div class="ay-grid-card">' +
+        '<div class="ay-grid-badge-overlay">' + badgeHtml + '</div>' +
+        thumbHtml +
+        '<div class="ay-grid-body">' +
+        '<div class="ay-grid-title">' + AY.esc(u.title) + '</div>' +
+        '<div class="ay-grid-meta">' +
+        '<span><span class="ay-subreddit-pill ' + subColor + '">r/' + AY.esc(u.subreddit) + '</span></span>' +
+        '<span><i class="bi bi-arrow-up"></i> ' + u.score + ' &middot; ' + u.duration + 's</span>' +
+        '</div>' +
+        '</div>' +
+        '</div>' +
+        '</a>';
+    });
+
+    gridBody.innerHTML = html;
+  }
+
+  // ── Pagination ──────────────────────────────────────────────
+  function renderPagination(data, page) {
+    const total = data.length;
+    const totalPages = Math.ceil(total / PER_PAGE) || 1;
+    const containerId = currentView === 'table' ? 'pagination' : 'pagination-grid';
+    const container = document.getElementById(containerId);
+
+    if (total === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    const start = (page - 1) * PER_PAGE + 1;
+    const end = Math.min(page * PER_PAGE, total);
+
+    let html = '<span class="ay-pagination-info">Showing ' + start + '–' + end + ' of ' + total + '</span>';
+
+    html += '<button class="ay-page-btn" ' + (page <= 1 ? 'disabled' : '') + ' data-page="' + (page - 1) + '"><i class="bi bi-chevron-left"></i></button>';
+
+    const maxButtons = 7;
+    let startPage = Math.max(1, page - Math.floor(maxButtons / 2));
+    let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+    if (endPage - startPage < maxButtons - 1) {
+      startPage = Math.max(1, endPage - maxButtons + 1);
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+      html += '<button class="ay-page-btn ' + (i === page ? 'active' : '') + '" data-page="' + i + '">' + i + '</button>';
+    }
+
+    html += '<button class="ay-page-btn" ' + (page >= totalPages ? 'disabled' : '') + ' data-page="' + (page + 1) + '"><i class="bi bi-chevron-right"></i></button>';
+
+    container.innerHTML = html;
+
+    container.querySelectorAll('.ay-page-btn[data-page]').forEach(btn => {
+      btn.addEventListener('click', function() {
+        if (this.disabled) return;
+        currentPage = parseInt(this.dataset.page);
+        refresh();
+      });
+    });
+  }
+
+  // ── Sort Header Indicators ──────────────────────────────────
+  function updateSortHeaders() {
+    document.querySelectorAll('.ay-table th[data-sort]').forEach(th => {
+      const arrow = th.querySelector('.sort-arrow');
+      if (!arrow) return;
+      if (th.dataset.sort === currentSort.key) {
+        th.classList.add('sorted');
+        arrow.textContent = currentSort.dir === 'asc' ? ' \u25B2' : ' \u25BC';
+      } else {
+        th.classList.remove('sorted');
+        arrow.textContent = '';
+      }
+    });
+  }
+
+  // ── Master Refresh ──────────────────────────────────────────
+  function refresh() {
+    filteredData = sortData(getFiltered());
+    updateSortHeaders();
+
+    if (currentView === 'table') {
+      renderTable(filteredData, currentPage);
+      renderPagination(filteredData, currentPage);
+    } else {
+      renderGrid(filteredData, currentPage);
+      renderPagination(filteredData, currentPage);
+    }
+  }
+
+  // ── Event Bindings ──────────────────────────────────────────
+
+  // Search
+  document.getElementById('filter-search').addEventListener('input', function() {
+    currentPage = 1;
+    refresh();
+  });
+
+  // Subreddit filter
+  document.getElementById('filter-subreddit').addEventListener('change', function() {
+    currentPage = 1;
+    refresh();
+  });
+
+  // Status filter
+  document.getElementById('filter-status').addEventListener('change', function() {
+    currentPage = 1;
+    refresh();
+  });
+
+  // Date range buttons
+  document.querySelectorAll('.ay-date-range-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.ay-date-range-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      currentPage = 1;
+      refresh();
+    });
+  });
+
+  // View toggle
+  document.querySelectorAll('.ay-view-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.ay-view-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      currentView = this.dataset.view;
+      currentPage = 1;
+      refresh();
+    });
+  });
+
+  // Sort headers
+  document.querySelectorAll('.ay-table th[data-sort]').forEach(th => {
+    if (th.dataset.sort === 'thumb') return;
+    th.addEventListener('click', function() {
+      const key = this.dataset.sort;
+      if (currentSort.key === key) {
+        currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        currentSort.key = key;
+        currentSort.dir = key === 'uploaded_at' || key === 'score' ? 'desc' : 'asc';
+      }
+      currentPage = 1;
+      refresh();
+    });
+  });
+
+  // Export CSV
+  document.getElementById('export-csv-btn').addEventListener('click', function() {
+    const data = sortData(getFiltered());
+    if (data.length === 0) {
+      AY.toast.show('No data to export', 'info', 2000);
+      return;
+    }
+
+    const header = 'Date,Title,Subreddit,Author,Score,Duration,Status,YouTube URL';
+    const rows = data.map(u => {
+      const ytUrl = u.youtube_id ? 'https://www.youtube.com/shorts/' + u.youtube_id : '';
+      return [
+        '"' + (u.uploaded_at || '').replace(/"/g, '""') + '"',
+        '"' + (u.title || '').replace(/"/g, '""') + '"',
+        '"r/' + (u.subreddit || '').replace(/"/g, '""') + '"',
+        '"' + (u.author || '').replace(/"/g, '""') + '"',
+        u.score,
+        u.duration,
+        '"' + u.status + '"',
+        '"' + ytUrl + '"'
+      ].join(',');
+    });
+
+    const csv = header + '\n' + rows.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'auto_youtuber_history.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    AY.toast.show('CSV exported (' + data.length + ' rows)', 'success', 2000);
+  });
+
+  // ── Init ────────────────────────────────────────────────────
+  computeStats();
+  populateSubreddits();
+  buildHeatmap();
+  refresh();
+})();
+</script>
 {% endblock %}

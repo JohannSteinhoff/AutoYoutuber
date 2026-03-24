@@ -1,15 +1,20 @@
+import csv
+import io
 import json
 import logging
 import os
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import (
+    Flask, Response, flash, jsonify, redirect, render_template,
+    request, send_file, session, url_for,
+)
 
 import config
 from history import get_history, get_history_count
 from pipeline_runner import runner
 from quota import get_quota_info
-from settings_db import get_all_settings, set_many_settings
+from settings_db import DEFAULTS, get_all_settings, set_many_settings
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +76,7 @@ def is_youtube_connected() -> bool:
     return os.path.exists(token_file) and os.path.getsize(token_file) > 0
 
 
-# ── Routes ─────────────────────────────────────────────────────────
+# ── Page Routes ───────────────────────────────────────────────────
 
 @app.route("/")
 def dashboard():
@@ -111,6 +116,11 @@ def settings_save():
 
     set_many_settings(updates)
     config.reload()
+
+    # If this is an AJAX request, return JSON
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"ok": True, "message": "Settings saved!"})
+
     flash("Settings saved!", "success")
     return redirect(url_for("settings_page"))
 
@@ -133,16 +143,49 @@ def submit_url():
 
     started = runner.add_single_to_queue(url)
     if started:
-        flash("Video added to queue. Arm the pipeline to start processing.", "success")
+        flash("Video added to queue!", "success")
     else:
         flash("Could not add to queue.", "error")
 
     return redirect(url_for("dashboard"))
 
 
+@app.route("/submit/batch", methods=["POST"])
+def submit_batch():
+    """Accept multiple URLs, one per line."""
+    urls_raw = request.form.get("urls", "").strip()
+    if not urls_raw:
+        flash("Please enter at least one URL.", "error")
+        return redirect(url_for("submit"))
+
+    if runner.is_running():
+        flash("Pipeline is busy. Please wait.", "error")
+        return redirect(url_for("dashboard"))
+
+    urls = [u.strip() for u in urls_raw.splitlines() if u.strip()]
+    added = 0
+    for url in urls:
+        if runner.add_single_to_queue(url):
+            added += 1
+            # Small delay to let the thread kick off extraction
+            import time
+            time.sleep(0.5)
+
+    if added:
+        flash(f"Added {added} video(s) to queue!", "success")
+    else:
+        flash("Could not add any URLs to queue.", "error")
+
+    return redirect(url_for("dashboard"))
+
+
 @app.route("/history")
 def history_page():
-    return render_template("history.html", uploads=get_history(limit=100), total=get_history_count())
+    return render_template(
+        "history.html",
+        uploads=get_history(limit=500),
+        total=get_history_count(),
+    )
 
 
 @app.route("/logs")
@@ -154,7 +197,7 @@ def logs_page():
 
 @app.route("/queue/burn", methods=["POST"])
 def queue_burn():
-    """Burn daily limit: scrape top viral videos and add to queue."""
+    """Scrape top viral videos and add to queue."""
     if runner.is_running():
         flash("Pipeline is busy.", "error")
         return redirect(url_for("dashboard"))
@@ -189,9 +232,9 @@ def queue_disarm():
 
 @app.route("/queue/start", methods=["POST"])
 def queue_start():
+    # Auto-arm if not already armed (new simplified flow)
     if not runner.armed:
-        flash("Arm the pipeline first.", "error")
-        return redirect(url_for("dashboard"))
+        runner.arm()
 
     started = runner.start_processing()
     if started:
@@ -211,6 +254,37 @@ def queue_clear():
 @app.route("/queue/remove/<uid>", methods=["POST"])
 def queue_remove(uid):
     runner.remove_from_queue(uid)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/queue/cancel", methods=["POST"])
+def queue_cancel():
+    """Cancel the running pipeline by disarming it."""
+    runner.disarm()
+    flash("Pipeline cancelled. Current video will finish, remaining will be skipped.", "info")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/queue/reorder", methods=["POST"])
+def queue_reorder():
+    """Reorder queue items. Expects JSON body with {uids: [uid1, uid2, ...]}."""
+    data = request.get_json(silent=True)
+    if not data or "uids" not in data:
+        return jsonify({"ok": False, "error": "Missing uids"}), 400
+
+    uid_order = data["uids"]
+    runner.reorder_queue(uid_order)
+    return jsonify({"ok": True})
+
+
+@app.route("/queue/retry/<uid>", methods=["POST"])
+def queue_retry(uid):
+    """Re-queue a failed item."""
+    success = runner.retry_item(uid)
+    if success:
+        flash("Item re-queued!", "success")
+    else:
+        flash("Could not retry this item.", "error")
     return redirect(url_for("dashboard"))
 
 
@@ -304,7 +378,8 @@ def api_quota():
 
 @app.route("/api/history")
 def api_history():
-    return jsonify({"uploads": get_history(limit=20), "total": get_history_count()})
+    limit = request.args.get("limit", 20, type=int)
+    return jsonify({"uploads": get_history(limit=limit), "total": get_history_count()})
 
 
 @app.route("/api/logs")
@@ -316,3 +391,120 @@ def api_logs():
 def api_logs_clear():
     runner.log_buffer.clear()
     return jsonify({"ok": True})
+
+
+@app.route("/api/logs/download")
+def api_logs_download():
+    """Download the full log file."""
+    log_file = config.LOG_FILE
+    if os.path.exists(log_file):
+        return send_file(
+            os.path.abspath(log_file),
+            mimetype="text/plain",
+            as_attachment=True,
+            download_name="auto_youtuber.log",
+        )
+    # Fall back to in-memory buffer
+    content = "\n".join(runner.log_buffer.get_lines())
+    return Response(
+        content,
+        mimetype="text/plain",
+        headers={"Content-Disposition": "attachment; filename=auto_youtuber.log"},
+    )
+
+
+@app.route("/api/test-reddit", methods=["POST"])
+def api_test_reddit():
+    """Test Reddit API connection with current credentials."""
+    try:
+        import requests as req
+
+        cid = config.REDDIT_CLIENT_ID
+        secret = config.REDDIT_CLIENT_SECRET
+        ua = config.REDDIT_USER_AGENT or "AutoYoutuber/1.0"
+
+        if not cid or not secret:
+            return jsonify({"ok": False, "message": "Reddit credentials not configured"})
+
+        # Try fetching r/funny top post as a connectivity test
+        headers = {"User-Agent": ua}
+        resp = req.get(
+            "https://www.reddit.com/r/funny/top.json?limit=1&t=day",
+            headers=headers,
+            timeout=10,
+        )
+
+        if resp.status_code == 200:
+            return jsonify({"ok": True, "message": "Reddit API connection successful!"})
+        else:
+            return jsonify({"ok": False, "message": f"Reddit returned HTTP {resp.status_code}"})
+
+    except Exception as e:
+        return jsonify({"ok": False, "message": f"Connection failed: {e}"})
+
+
+@app.route("/api/test-youtube", methods=["POST"])
+def api_test_youtube():
+    """Test YouTube connection by checking if token is valid."""
+    try:
+        token_file = config.YOUTUBE_TOKEN_FILE
+        if not os.path.exists(token_file):
+            return jsonify({"ok": False, "message": "No YouTube token found. Connect your account first."})
+
+        with open(token_file) as f:
+            token_data = json.load(f)
+
+        if token_data.get("token"):
+            return jsonify({"ok": True, "message": "YouTube token found and appears valid!"})
+        else:
+            return jsonify({"ok": False, "message": "YouTube token file exists but appears empty or invalid"})
+
+    except Exception as e:
+        return jsonify({"ok": False, "message": f"Error checking token: {e}"})
+
+
+@app.route("/api/history/export")
+def api_history_export():
+    """Export upload history as CSV."""
+    uploads = get_history(limit=10000)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Title", "Subreddit", "Author", "Score", "Duration", "Status", "YouTube URL", "Reddit URL", "Error"])
+
+    for u in uploads:
+        yt_url = f"https://www.youtube.com/shorts/{u['youtube_id']}" if u.get("youtube_id") else ""
+        writer.writerow([
+            u.get("uploaded_at", ""),
+            u.get("title", ""),
+            u.get("subreddit", ""),
+            u.get("author", ""),
+            u.get("score", 0),
+            u.get("duration", 0),
+            u.get("status", ""),
+            yt_url,
+            u.get("reddit_url", ""),
+            u.get("error", ""),
+        ])
+
+    csv_content = output.getvalue()
+    output.close()
+
+    return Response(
+        csv_content,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=auto_youtuber_history.csv"},
+    )
+
+
+@app.route("/api/dashboard")
+def api_dashboard():
+    """Consolidated dashboard endpoint — reduces polling from 3 requests to 1."""
+    return jsonify({
+        "status": runner.get_status(),
+        "quota": get_quota_info(),
+        "history": {"uploads": get_history(limit=20), "total": get_history_count()},
+        "scheduler_running": _scheduler_running,
+        "next_run": get_next_run_time(),
+        "youtube_connected": is_youtube_connected(),
+    })

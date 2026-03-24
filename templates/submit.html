@@ -1,25 +1,571 @@
 {% extends "base.html" %}
 {% block title %}Submit — Auto Youtuber{% endblock %}
 
-{% block content %}
-<h4 class="mb-4"><i class="bi bi-send"></i> Submit a Reddit Video</h4>
+{% block extra_head %}
+<style>
+  /* ── Paste Zone ──────────────────────────────────────────── */
+  .ay-paste-zone {
+    background: var(--ay-bg-card);
+    border: 2px dashed var(--ay-border);
+    border-radius: var(--ay-radius);
+    padding: 48px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--ay-transition);
+    position: relative;
+  }
+  .ay-paste-zone:hover,
+  .ay-paste-zone.ay-paste-zone-focus {
+    border-color: var(--ay-accent);
+    background: var(--ay-bg-card-hover);
+    box-shadow: 0 0 0 4px var(--ay-accent-soft);
+  }
+  .ay-paste-zone-icon {
+    font-size: 2.4rem;
+    color: var(--ay-text-muted);
+    margin-bottom: 12px;
+    transition: color var(--ay-transition);
+  }
+  .ay-paste-zone:hover .ay-paste-zone-icon,
+  .ay-paste-zone.ay-paste-zone-focus .ay-paste-zone-icon {
+    color: var(--ay-accent);
+  }
+  .ay-paste-zone-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--ay-text-primary);
+    margin-bottom: 6px;
+  }
+  .ay-paste-zone-subtitle {
+    font-size: 0.82rem;
+    color: var(--ay-text-muted);
+  }
+  .ay-paste-zone-url {
+    margin-top: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--ay-info);
+    word-break: break-all;
+    display: none;
+  }
+  .ay-paste-zone-url.visible { display: block; }
 
-<div class="card">
-    <div class="card-body">
-        <p class="text-muted">Paste a Reddit video post URL. The video will be downloaded, reformatted to 9:16 Shorts, and uploaded to your YouTube channel.</p>
-        <form method="POST" action="/submit">
-            <div class="mb-3">
-                <label class="form-label">Reddit Post URL</label>
-                <input type="text" name="url" class="form-control form-control-lg" placeholder="https://www.reddit.com/r/funny/comments/..." required>
-                <div class="form-text">Supports full Reddit URLs, share links, and redd.it short links</div>
-            </div>
-            <button type="submit" class="btn btn-primary btn-lg" {{ 'disabled' if pipeline_running }}>
-                <i class="bi bi-play-fill"></i> Process & Upload
-            </button>
-            {% if pipeline_running %}
-            <p class="text-warning mt-2 mb-0"><i class="bi bi-exclamation-triangle"></i> Pipeline is currently running. Wait for it to finish.</p>
-            {% endif %}
-        </form>
-    </div>
+  /* ── URL Validation States ───────────────────────────────── */
+  .ay-url-valid .ay-paste-zone {
+    border-color: var(--ay-success);
+    background: var(--ay-bg-card-hover);
+  }
+  .ay-url-valid .ay-paste-zone-icon { color: var(--ay-success); }
+
+  .ay-url-invalid .ay-paste-zone {
+    border-color: var(--ay-danger);
+  }
+  .ay-url-invalid .ay-paste-zone-icon { color: var(--ay-danger); }
+
+  /* ── URL Status ──────────────────────────────────────────── */
+  .ay-url-status {
+    margin-top: 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 24px;
+    transition: all var(--ay-transition);
+  }
+  .ay-url-status.valid { color: var(--ay-success); }
+  .ay-url-status.invalid { color: var(--ay-danger); }
+
+  /* ── Clipboard Banner ────────────────────────────────────── */
+  .ay-clipboard-banner {
+    background: var(--ay-info-soft);
+    border: 1px solid rgba(0,176,255,0.25);
+    border-radius: var(--ay-radius-sm);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    font-size: 0.85rem;
+    color: var(--ay-info);
+    font-weight: 500;
+  }
+  .ay-clipboard-banner .ay-btn { flex-shrink: 0; }
+
+  /* ── Pipeline Warning Banner ─────────────────────────────── */
+  .ay-warning-banner {
+    background: var(--ay-warning-soft);
+    border: 1px solid rgba(255,179,0,0.25);
+    border-radius: var(--ay-radius-sm);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    font-size: 0.85rem;
+    color: var(--ay-warning);
+    font-weight: 500;
+  }
+
+  /* ── Mode Toggle ─────────────────────────────────────────── */
+  .ay-mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .ay-toggle-btn {
+    background: var(--ay-bg-input);
+    border: 1px solid var(--ay-border);
+    border-radius: var(--ay-radius-sm);
+    padding: 6px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ay-text-secondary);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all var(--ay-transition);
+  }
+  .ay-toggle-btn:hover { border-color: var(--ay-border-hover); color: var(--ay-text-primary); }
+  .ay-toggle-btn.active {
+    background: var(--ay-accent-soft);
+    border-color: var(--ay-accent);
+    color: var(--ay-accent);
+  }
+
+  /* ── Bulk Mode ───────────────────────────────────────────── */
+  .ay-bulk-section { display: none; }
+  .ay-bulk-section.visible { display: block; }
+  .ay-bulk-count {
+    margin-top: 8px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ay-text-muted);
+  }
+  .ay-bulk-count.has-valid { color: var(--ay-success); }
+
+  /* ── Preview Card ────────────────────────────────────────── */
+  .ay-preview-card {
+    display: none;
+    margin-top: 20px;
+  }
+  .ay-preview-card.visible { display: block; }
+  .ay-preview-url {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    color: var(--ay-info);
+    word-break: break-all;
+    margin-top: 8px;
+  }
+
+  /* ── Submit Area ─────────────────────────────────────────── */
+  .ay-submit-area {
+    margin-top: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* ── History Rows ────────────────────────────────────────── */
+  .ay-history-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--ay-border);
+    cursor: pointer;
+    transition: background var(--ay-transition);
+  }
+  .ay-history-row:last-child { border-bottom: none; }
+  .ay-history-row:hover { background: var(--ay-bg-card-hover); }
+  .ay-history-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--ay-text-primary);
+  }
+  .ay-history-time {
+    font-size: 0.75rem;
+    color: var(--ay-text-muted);
+    flex-shrink: 0;
+  }
+
+  /* ── Spinner keyframes ───────────────────────────────────── */
+  @keyframes ay-spin {
+    to { transform: rotate(360deg); }
+  }
+  .ay-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    display: inline-block;
+    animation: ay-spin 0.6s linear infinite;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- ═══ Page Header ═══ -->
+<div class="ay-page-header">
+  <div>
+    <h1 class="ay-page-title"><i class="bi bi-plus-circle"></i> Submit Videos</h1>
+  </div>
+  <div class="ay-mode-toggle">
+    <button type="button" class="ay-toggle-btn active" id="mode-single" onclick="setMode('single')">
+      <i class="bi bi-link-45deg"></i> Single URL
+    </button>
+    <button type="button" class="ay-toggle-btn" id="mode-bulk" onclick="setMode('bulk')">
+      <i class="bi bi-list-ul"></i> Bulk Mode
+    </button>
+  </div>
 </div>
+
+<!-- ═══ Pipeline Busy Warning ═══ -->
+{% if pipeline_running %}
+<div class="ay-warning-banner" id="pipeline-warning">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <span>Pipeline is currently running. New submissions will be queued until the current job finishes.</span>
+</div>
+{% endif %}
+
+<!-- ═══ Clipboard Auto-detect Banner ═══ -->
+<div class="ay-clipboard-banner" id="clipboard-banner" style="display:none;">
+  <i class="bi bi-clipboard-check"></i>
+  <span id="clipboard-text">Reddit URL detected in clipboard</span>
+  <button type="button" class="ay-btn ay-btn-sm ay-btn-primary" onclick="useClipboardUrl()">Use it</button>
+  <button type="button" class="ay-btn ay-btn-sm ay-btn-ghost" onclick="dismissClipboard()" style="padding:5px 8px;">
+    <i class="bi bi-x"></i>
+  </button>
+</div>
+
+<!-- ═══ Single URL Mode ═══ -->
+<div id="single-section">
+  <form method="POST" action="/submit" id="single-form" onsubmit="return handleSingleSubmit(event)">
+    <!-- Paste Zone -->
+    <div id="paste-wrapper">
+      <div class="ay-paste-zone" id="paste-zone" onclick="focusPasteInput()">
+        <div class="ay-paste-zone-icon"><i class="bi bi-link-45deg"></i></div>
+        <div class="ay-paste-zone-title">Paste a Reddit URL</div>
+        <div class="ay-paste-zone-subtitle">Supports reddit.com links, share links, and redd.it short URLs</div>
+        <input
+          type="text"
+          name="url"
+          id="url-input"
+          class="ay-input ay-input-lg"
+          placeholder="https://www.reddit.com/r/..."
+          autocomplete="off"
+          spellcheck="false"
+          style="margin-top:16px; text-align:center;"
+          oninput="validateUrl(this.value)"
+          onfocus="document.getElementById('paste-zone').classList.add('ay-paste-zone-focus')"
+          onblur="document.getElementById('paste-zone').classList.remove('ay-paste-zone-focus')"
+        >
+        <div class="ay-paste-zone-url" id="paste-display"></div>
+      </div>
+
+      <!-- URL Status Indicator -->
+      <div class="ay-url-status" id="url-status"></div>
+    </div>
+
+    <!-- Post Preview Card -->
+    <div class="ay-preview-card" id="preview-card">
+      <div class="ay-card">
+        <div class="ay-card-body" style="display:flex;align-items:center;gap:14px;">
+          <i class="bi bi-play-circle-fill" style="font-size:1.6rem;color:var(--ay-success);flex-shrink:0;"></i>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:0.9rem;">Video found</div>
+            <div class="ay-preview-url" id="preview-url"></div>
+            <div style="font-size:0.78rem;color:var(--ay-text-muted);margin-top:4px;">Click Submit to add to queue</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Submit Button -->
+    <div class="ay-submit-area">
+      <button type="submit" class="ay-btn ay-btn-primary" id="submit-btn" disabled>
+        <i class="bi bi-send-fill"></i> <span id="submit-text">Submit</span>
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- ═══ Bulk URL Mode ═══ -->
+<div class="ay-bulk-section" id="bulk-section">
+  <form method="POST" action="/submit/batch" id="bulk-form" onsubmit="return handleBulkSubmit(event)">
+    <div class="ay-card">
+      <div class="ay-card-header">
+        <span><i class="bi bi-list-ul"></i> Bulk URL Entry</span>
+      </div>
+      <div class="ay-card-body">
+        <textarea
+          name="urls"
+          id="bulk-textarea"
+          class="ay-input"
+          rows="8"
+          placeholder="Paste multiple Reddit URLs here, one per line..."
+          oninput="validateBulkUrls()"
+          style="resize:vertical;font-family:'JetBrains Mono',monospace;font-size:0.82rem;"
+        ></textarea>
+        <div class="ay-bulk-count" id="bulk-count"></div>
+      </div>
+    </div>
+
+    <div class="ay-submit-area">
+      <button type="submit" class="ay-btn ay-btn-primary" id="bulk-submit-btn" disabled>
+        <i class="bi bi-send-fill"></i> <span id="bulk-submit-text">Submit All</span>
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- ═══ Paste History ═══ -->
+<div class="ay-card" style="margin-top:32px;" id="history-card">
+  <div class="ay-card-header">
+    <span><i class="bi bi-clock-history"></i> Recent Submissions</span>
+  </div>
+  <div class="ay-card-body" id="history-body">
+    <div style="text-align:center;color:var(--ay-text-muted);font-size:0.85rem;padding:12px 0;">
+      Loading...
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+  'use strict';
+
+  const REDDIT_REGEX = /(?:https?:\/\/)?(?:www\.|old\.|new\.|np\.)?(?:reddit\.com\/r\/\w+\/comments\/|redd\.it\/|v\.redd\.it\/)\S+/i;
+  const pipelineRunning = {{ 'true' if pipeline_running else 'false' }};
+  let detectedClipboardUrl = '';
+  let currentMode = 'single';
+
+  /* ── URL Validation ──────────────────────────────────────── */
+  window.validateUrl = function(value) {
+    const wrapper = document.getElementById('paste-wrapper');
+    const status = document.getElementById('url-status');
+    const submitBtn = document.getElementById('submit-btn');
+    const preview = document.getElementById('preview-card');
+    const previewUrl = document.getElementById('preview-url');
+    const display = document.getElementById('paste-display');
+
+    const trimmed = value.trim();
+
+    wrapper.classList.remove('ay-url-valid', 'ay-url-invalid');
+    status.className = 'ay-url-status';
+    status.innerHTML = '';
+    preview.classList.remove('visible');
+    display.classList.remove('visible');
+
+    if (!trimmed) {
+      submitBtn.disabled = true;
+      return;
+    }
+
+    if (REDDIT_REGEX.test(trimmed)) {
+      wrapper.classList.add('ay-url-valid');
+      status.classList.add('valid');
+      status.innerHTML = '<i class="bi bi-check-circle-fill"></i> Valid Reddit URL';
+      submitBtn.disabled = pipelineRunning;
+      preview.classList.add('visible');
+      previewUrl.textContent = trimmed;
+      display.textContent = trimmed;
+      display.classList.add('visible');
+    } else {
+      wrapper.classList.add('ay-url-invalid');
+      status.classList.add('invalid');
+      status.innerHTML = '<i class="bi bi-x-circle-fill"></i> Not a valid Reddit URL';
+      submitBtn.disabled = true;
+      display.textContent = trimmed;
+      display.classList.add('visible');
+    }
+  };
+
+  /* ── Focus Paste Input ───────────────────────────────────── */
+  window.focusPasteInput = function() {
+    document.getElementById('url-input').focus();
+  };
+
+  /* ── Bulk Validation ─────────────────────────────────────── */
+  window.validateBulkUrls = function() {
+    const textarea = document.getElementById('bulk-textarea');
+    const countEl = document.getElementById('bulk-count');
+    const submitBtn = document.getElementById('bulk-submit-btn');
+
+    const lines = textarea.value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const validUrls = lines.filter(l => REDDIT_REGEX.test(l));
+    const count = validUrls.length;
+
+    if (lines.length === 0) {
+      countEl.textContent = '';
+      countEl.className = 'ay-bulk-count';
+      submitBtn.disabled = true;
+    } else {
+      countEl.textContent = count + ' valid URL' + (count !== 1 ? 's' : '') + ' detected';
+      countEl.className = 'ay-bulk-count' + (count > 0 ? ' has-valid' : '');
+      submitBtn.disabled = count === 0 || pipelineRunning;
+    }
+  };
+
+  /* ── Mode Toggle ─────────────────────────────────────────── */
+  window.setMode = function(mode) {
+    currentMode = mode;
+    document.getElementById('mode-single').classList.toggle('active', mode === 'single');
+    document.getElementById('mode-bulk').classList.toggle('active', mode === 'bulk');
+    document.getElementById('single-section').style.display = mode === 'single' ? 'block' : 'none';
+    document.getElementById('bulk-section').classList.toggle('visible', mode === 'bulk');
+  };
+
+  /* ── Submit Handlers ─────────────────────────────────────── */
+  window.handleSingleSubmit = function(e) {
+    const btn = document.getElementById('submit-btn');
+    const textEl = document.getElementById('submit-text');
+    btn.disabled = true;
+    textEl.innerHTML = '<span class="ay-spinner"></span> Processing...';
+    return true;
+  };
+
+  window.handleBulkSubmit = function(e) {
+    const btn = document.getElementById('bulk-submit-btn');
+    const textEl = document.getElementById('bulk-submit-text');
+    btn.disabled = true;
+    textEl.innerHTML = '<span class="ay-spinner"></span> Processing...';
+    return true;
+  };
+
+  /* ── Clipboard Auto-detect ───────────────────────────────── */
+  window.useClipboardUrl = function() {
+    if (!detectedClipboardUrl) return;
+    const input = document.getElementById('url-input');
+    input.value = detectedClipboardUrl;
+    validateUrl(detectedClipboardUrl);
+    setMode('single');
+    dismissClipboard();
+    input.focus();
+  };
+
+  window.dismissClipboard = function() {
+    document.getElementById('clipboard-banner').style.display = 'none';
+    detectedClipboardUrl = '';
+  };
+
+  function checkClipboard() {
+    if (!navigator.clipboard || !navigator.clipboard.readText) return;
+    navigator.clipboard.readText().then(function(text) {
+      var trimmed = (text || '').trim();
+      if (trimmed && REDDIT_REGEX.test(trimmed)) {
+        detectedClipboardUrl = trimmed;
+        document.getElementById('clipboard-text').textContent = 'Reddit URL detected in clipboard: ' + (trimmed.length > 60 ? trimmed.substring(0, 60) + '...' : trimmed);
+        document.getElementById('clipboard-banner').style.display = 'flex';
+      }
+    }).catch(function() {
+      /* clipboard permission denied — silently ignore */
+    });
+  }
+
+  /* ── Paste History ───────────────────────────────────────── */
+  function timeAgo(dateStr) {
+    var now = Date.now();
+    var then = new Date(dateStr).getTime();
+    var diff = Math.floor((now - then) / 1000);
+    if (diff < 60) return diff + 's ago';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return Math.floor(diff / 86400) + 'd ago';
+  }
+
+  function statusBadge(status) {
+    var map = {
+      'uploaded': ['green', 'check-circle-fill'],
+      'queued': ['blue', 'hourglass-split'],
+      'downloading': ['blue', 'arrow-down-circle'],
+      'processing': ['yellow', 'gear-fill'],
+      'uploading': ['yellow', 'cloud-arrow-up'],
+      'failed': ['red', 'x-circle-fill']
+    };
+    var cfg = map[status] || ['gray', 'question-circle'];
+    return '<span class="ay-badge ay-badge-' + cfg[0] + '"><i class="bi bi-' + cfg[1] + '"></i> ' + status + '</span>';
+  }
+
+  function extractSubreddit(url) {
+    var m = (url || '').match(/\/r\/(\w+)/i);
+    return m ? m[1] : null;
+  }
+
+  function loadHistory() {
+    var body = document.getElementById('history-body');
+    fetch('/api/history?limit=10')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var items = Array.isArray(data) ? data : (data.items || data.history || []);
+        if (items.length === 0) {
+          body.innerHTML = '<div style="text-align:center;color:var(--ay-text-muted);font-size:0.85rem;padding:12px 0;">' +
+            '<i class="bi bi-inbox" style="font-size:1.4rem;display:block;margin-bottom:6px;"></i>' +
+            'No recent submissions</div>';
+          return;
+        }
+
+        var html = '';
+        items.forEach(function(item) {
+          var title = item.title || item.url || 'Untitled';
+          if (title.length > 55) title = title.substring(0, 55) + '...';
+          var sub = extractSubreddit(item.url || '');
+          var subPill = sub ? '<span class="ay-badge ay-badge-accent">r/' + sub + '</span>' : '';
+          var time = item.created_at || item.timestamp || item.submitted_at || '';
+          var timeStr = time ? timeAgo(time) : '';
+
+          html += '<div class="ay-history-row" onclick="resubmitUrl(\'' + (item.url || '').replace(/'/g, "\\'") + '\')">' +
+            '<div class="ay-history-title">' + title + '</div>' +
+            subPill +
+            statusBadge(item.status || 'queued') +
+            '<div class="ay-history-time">' + timeStr + '</div>' +
+            '</div>';
+        });
+
+        body.innerHTML = html;
+      })
+      .catch(function() {
+        body.innerHTML = '<div style="text-align:center;color:var(--ay-text-muted);font-size:0.85rem;padding:12px 0;">' +
+          '<i class="bi bi-exclamation-circle" style="display:block;font-size:1.2rem;margin-bottom:6px;"></i>' +
+          'Could not load history</div>';
+      });
+  }
+
+  window.resubmitUrl = function(url) {
+    if (!url) return;
+    setMode('single');
+    var input = document.getElementById('url-input');
+    input.value = url;
+    validateUrl(url);
+    input.focus();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  /* ── Paste event on document ─────────────────────────────── */
+  document.addEventListener('paste', function(e) {
+    if (currentMode === 'single' && document.activeElement !== document.getElementById('url-input')) {
+      var text = (e.clipboardData || window.clipboardData).getData('text');
+      if (text) {
+        var input = document.getElementById('url-input');
+        input.value = text.trim();
+        validateUrl(text.trim());
+        input.focus();
+        e.preventDefault();
+      }
+    }
+  });
+
+  /* ── Init ─────────────────────────────────────────────────── */
+  checkClipboard();
+  loadHistory();
+})();
+</script>
 {% endblock %}

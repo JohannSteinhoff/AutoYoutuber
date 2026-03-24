@@ -2,447 +2,880 @@
 {% block title %}Dashboard — Auto Youtuber{% endblock %}
 
 {% block content %}
-<!-- Top status cards -->
-<div class="row g-3 mb-4">
-    <!-- API Quota -->
-    <div class="col-md-4">
-        <div class="card h-100">
-            <div class="card-body">
-                <h6 class="card-title text-muted"><i class="bi bi-speedometer"></i> API Quota</h6>
-                <div class="d-flex justify-content-between mb-1">
-                    <span class="small fw-bold"><span id="quota-uploads">{{ quota.uploads_today }}</span>/6 uploaded</span>
-                    <span class="small text-muted"><span id="quota-remaining-uploads">{{ quota.max_uploads_remaining }}</span> left</span>
-                </div>
-                <div class="progress mb-1" style="height: 10px;">
-                    <div id="quota-bar" class="progress-bar
-                        {% if quota.percent_used < 50 %}bg-success{% elif quota.percent_used < 80 %}bg-warning{% else %}bg-danger{% endif %}"
-                        style="width: {{ quota.percent_used }}%"></div>
-                </div>
-                <p class="mb-0 text-muted" style="font-size: 0.75rem;">
-                    <span id="quota-used">{{ quota.used }}</span>/{{ quota.daily_quota }} units — resets midnight PT
-                </p>
-            </div>
-        </div>
-    </div>
+{% set queued_count = status.queue|selectattr('status','equalto','queued')|list|length %}
+{% set active_item = status.queue|selectattr('status','in',['downloading','processing','uploading'])|list|first %}
+{% set done_items = history|selectattr('status','equalto','uploaded')|list %}
+{% set failed_items = history|selectattr('status','equalto','failed')|list %}
+{% set success_rate = ((done_items|length / (done_items|length + failed_items|length) * 100)|round(0)|int) if (done_items|length + failed_items|length) > 0 else 0 %}
 
-    <!-- YouTube -->
-    <div class="col-md-4">
-        <div class="card h-100">
-            <div class="card-body d-flex justify-content-between align-items-center">
-                <div>
-                    <h6 class="card-title text-muted mb-1"><i class="bi bi-youtube"></i> YouTube</h6>
-                    {% if youtube_connected %}
-                    <span class="badge bg-success">Connected</span>
-                    {% else %}
-                    <span class="badge bg-warning">Not Connected</span>
-                    {% endif %}
-                </div>
-                <a href="/oauth/start" class="btn btn-sm btn-outline-danger">
-                    <i class="bi bi-box-arrow-in-right"></i> {{ 'Reconnect' if youtube_connected else 'Connect' }}
-                </a>
-            </div>
-        </div>
-    </div>
+{# Calculate upload streak — consecutive uploaded items from most recent #}
+{% set ns = namespace(streak=0, counting=true) %}
+{% for item in history %}
+  {% if ns.counting %}
+    {% if item.status == 'uploaded' %}
+      {% set ns.streak = ns.streak + 1 %}
+    {% else %}
+      {% set ns.counting = false %}
+    {% endif %}
+  {% endif %}
+{% endfor %}
+{% set streak = ns.streak %}
 
-    <!-- Scheduler -->
-    <div class="col-md-4">
-        <div class="card h-100">
-            <div class="card-body d-flex justify-content-between align-items-center">
-                <div>
-                    <h6 class="card-title text-muted mb-1"><i class="bi bi-clock"></i> Scheduler</h6>
-                    <span class="badge {{ 'bg-success' if scheduler_running else 'bg-secondary' }}">
-                        {{ 'Running' if scheduler_running else 'Stopped' }}
-                    </span>
-                    {% if scheduler_running %}
-                    <span class="text-muted small ms-2">Next: {{ next_run or 'N/A' }}</span>
-                    {% endif %}
-                </div>
-                {% if scheduler_running %}
-                <form method="POST" action="/scheduler/stop">
-                    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-stop-circle"></i> Stop</button>
-                </form>
-                {% else %}
-                <form method="POST" action="/scheduler/start">
-                    <button class="btn btn-sm btn-outline-success"><i class="bi bi-play-circle"></i> Start</button>
-                </form>
-                {% endif %}
-            </div>
-        </div>
-    </div>
+{# Determine quota color #}
+{% if quota.percent_used < 50 %}
+  {% set quota_color = 'var(--ay-success)' %}
+{% elif quota.percent_used < 80 %}
+  {% set quota_color = 'var(--ay-warning)' %}
+{% else %}
+  {% set quota_color = 'var(--ay-danger)' %}
+{% endif %}
+
+<!-- ═══ Page Header ═══ -->
+<div class="ay-page-header">
+  <div>
+    <h1 class="ay-page-title">Dashboard</h1>
+    <p class="ay-page-subtitle" style="color:var(--ay-text-muted);font-size:0.85rem;margin:4px 0 0;">
+      {% if pipeline_running %}
+        <span class="ay-badge ay-badge-blue"><i class="bi bi-activity"></i> Pipeline running</span>
+      {% elif scheduler_running %}
+        <span class="ay-badge ay-badge-green"><i class="bi bi-clock"></i> Scheduler active</span>
+      {% else %}
+        <span class="ay-badge ay-badge-gray"><i class="bi bi-pause-circle"></i> Idle</span>
+      {% endif %}
+      {% if scheduler_running and next_run %}
+        <span class="ay-badge ay-badge-yellow" id="countdown-badge" style="margin-left:4px;">
+          <i class="bi bi-hourglass-split"></i> <span id="countdown-text">Next run soon</span>
+        </span>
+      {% endif %}
+    </p>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    {% if streak > 1 %}
+      <span class="ay-streak" id="streak-badge"><i class="bi bi-fire"></i> {{ streak }} streak</span>
+    {% endif %}
+    {% if not youtube_connected %}
+      <a href="/settings" class="ay-btn ay-btn-warning ay-btn-sm"><i class="bi bi-exclamation-triangle"></i> Connect YouTube</a>
+    {% endif %}
+  </div>
 </div>
 
-<!-- Main controls -->
-<div class="card mb-4">
-    <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div class="d-flex gap-2 align-items-center">
-                <form method="POST" action="/queue/burn" class="d-flex gap-2 align-items-center">
-                    <button class="btn btn-danger" {{ 'disabled' if pipeline_running }}>
-                        <i class="bi bi-search"></i> Find
-                    </button>
-                    <input type="number" name="count" value="6" min="1" max="50" class="form-control form-control-sm" style="width: 70px;">
-                    <span class="text-muted small text-nowrap">videos</span>
-                </form>
-                <form method="POST" action="/submit" class="d-flex gap-2">
-                    <input type="text" name="url" class="form-control form-control-sm" placeholder="Or paste a Reddit URL..." style="width: 300px;">
-                    <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap" {{ 'disabled' if pipeline_running }}>
-                        <i class="bi bi-plus-lg"></i> Add
-                    </button>
-                </form>
-            </div>
-            <div class="d-flex gap-2" id="arm-controls">
-                {% set queued_count = status.queue_summary.queued %}
-                {% if not status.armed %}
-                <form method="POST" action="/queue/arm">
-                    <button class="btn btn-warning" {{ 'disabled' if queued_count == 0 }}>
-                        <i class="bi bi-shield-check"></i> Arm Pipeline ({{ queued_count }})
-                    </button>
-                </form>
-                {% else %}
-                <form method="POST" action="/queue/start">
-                    <button class="btn btn-success" {{ 'disabled' if pipeline_running }}>
-                        <i class="bi bi-play-fill"></i> Start Processing
-                    </button>
-                </form>
-                <form method="POST" action="/queue/disarm">
-                    <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-x"></i> Disarm</button>
-                </form>
-                {% endif %}
-                <form method="POST" action="/queue/clear">
-                    <button class="btn btn-outline-secondary btn-sm" {{ 'disabled' if pipeline_running }}>
-                        <i class="bi bi-trash"></i> Clear
-                    </button>
-                </form>
-            </div>
-        </div>
+<!-- ═══ Hero Stats ═══ -->
+<div class="ay-stats-grid" id="stats-grid">
+  <!-- Uploaded Today -->
+  <div class="ay-stat-card">
+    <div class="ay-ring">
+      <svg viewBox="0 0 36 36">
+        <circle class="ay-ring-bg" cx="18" cy="18" r="15.9"/>
+        <circle class="ay-ring-fill" cx="18" cy="18" r="15.9"
+                stroke="var(--ay-accent)"
+                stroke-dasharray="{{ (quota.uploads_today / 6 * 100)|round(1) }}, 100"
+                id="ring-uploads"/>
+      </svg>
+      <span class="ay-ring-label" id="ring-uploads-label">{{ quota.uploads_today }}</span>
     </div>
+    <div>
+      <div class="ay-stat-value" id="stat-uploads">{{ quota.uploads_today }}/6</div>
+      <div class="ay-stat-label">Uploaded Today</div>
+    </div>
+  </div>
+
+  <!-- Queue -->
+  <div class="ay-stat-card">
+    <div class="ay-stat-icon green"><i class="bi bi-collection"></i></div>
+    <div>
+      <div class="ay-stat-value" id="stat-queued">{{ queued_count }}</div>
+      <div class="ay-stat-label">Queue</div>
+    </div>
+  </div>
+
+  <!-- Success Rate -->
+  <div class="ay-stat-card">
+    <div class="ay-ring">
+      <svg viewBox="0 0 36 36">
+        <circle class="ay-ring-bg" cx="18" cy="18" r="15.9"/>
+        <circle class="ay-ring-fill" cx="18" cy="18" r="15.9"
+                stroke="var(--ay-success)"
+                stroke-dasharray="{{ success_rate }}, 100"
+                id="ring-success"/>
+      </svg>
+      <span class="ay-ring-label" id="ring-success-label">{{ success_rate }}%</span>
+    </div>
+    <div>
+      <div class="ay-stat-value" id="stat-success">{{ success_rate }}%</div>
+      <div class="ay-stat-label">Success Rate</div>
+    </div>
+  </div>
+
+  <!-- API Quota -->
+  <div class="ay-stat-card">
+    <div class="ay-ring">
+      <svg viewBox="0 0 36 36">
+        <circle class="ay-ring-bg" cx="18" cy="18" r="15.9"/>
+        <circle class="ay-ring-fill" cx="18" cy="18" r="15.9"
+                stroke="{{ quota_color }}"
+                stroke-dasharray="{{ quota.percent_used }}, 100"
+                id="ring-quota"/>
+      </svg>
+      <span class="ay-ring-label" id="ring-quota-label">{{ quota.percent_used }}%</span>
+    </div>
+    <div>
+      <div class="ay-stat-value" id="stat-quota">{{ quota.percent_used }}%</div>
+      <div class="ay-stat-label">API Quota</div>
+    </div>
+  </div>
 </div>
 
-<!-- Pipeline state banner -->
-<div id="state-banner" class="alert alert-info d-flex align-items-center mb-4 {{ 'd-none' if status.state == 'idle' }}" role="alert">
-    <div class="spinner-border spinner-border-sm me-2" role="status" id="state-spinner"></div>
-    <span id="state-message">{{ status.message }}</span>
-</div>
-
-<!-- Queue -->
-<div class="card mb-4">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-list-check"></i> Queue</span>
-        <span class="badge bg-secondary" id="queue-count">{{ status.queue | length }} items</span>
-    </div>
-    <div class="card-body p-0" id="queue-container">
-        {% if status.queue %}
-        {% for item in status.queue %}
-        <div class="d-flex align-items-center border-bottom px-3 py-2 queue-item" data-uid="{{ item.uid }}">
-            <!-- Status icon -->
-            <div class="me-3" style="width: 32px; text-align: center;">
-                {% if item.status == 'queued' %}
-                <i class="bi bi-hourglass text-muted fs-5"></i>
-                {% elif item.status in ('downloading', 'processing', 'uploading') %}
-                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-                {% elif item.status == 'done' %}
-                <i class="bi bi-check-circle-fill text-success fs-5"></i>
-                {% elif item.status == 'failed' %}
-                <i class="bi bi-x-circle-fill text-danger fs-5"></i>
-                {% elif item.status == 'skipped' %}
-                <i class="bi bi-skip-forward-fill text-muted fs-5"></i>
-                {% endif %}
-            </div>
-            <!-- Info -->
-            <div class="flex-grow-1 me-3">
-                <div class="fw-semibold" style="font-size: 0.9rem;">
-                    {% if item.url %}<a href="{{ item.url }}" target="_blank" class="text-decoration-none">{{ item.title[:70] }}</a>{% else %}{{ item.title[:70] }}{% endif %}
-                </div>
-                <div class="text-muted" style="font-size: 0.78rem;">
-                    r/{{ item.subreddit }}
-                    {% if item.author and item.author not in ('[deleted]', '[unknown]') %} · u/{{ item.author }}{% endif %}
-                    {% if item.score %} · {{ item.score }} pts{% endif %}
-                    {% if item.duration %} · {{ item.duration }}s{% endif %}
-                </div>
-            </div>
-            <!-- Status / progress -->
-            <div class="text-end me-2" style="min-width: 180px;">
-                {% if item.status == 'queued' %}
-                <span class="badge bg-secondary">Queued</span>
-                {% elif item.status == 'downloading' %}
-                <span class="badge bg-primary">Downloading...</span>
-                {% elif item.status == 'processing' %}
-                <span class="badge bg-warning text-dark">Processing...</span>
-                {% elif item.status == 'uploading' %}
-                <span class="badge bg-info">Uploading...</span>
-                {% elif item.status == 'done' %}
-                <a href="https://www.youtube.com/shorts/{{ item.youtube_id }}" target="_blank" class="badge bg-success text-decoration-none">
-                    Uploaded <i class="bi bi-box-arrow-up-right"></i>
-                </a>
-                {% elif item.status == 'failed' %}
-                <span class="badge bg-danger" title="{{ item.error }}">Failed</span>
-                {% elif item.status == 'skipped' %}
-                <span class="badge bg-secondary">Skipped</span>
-                {% endif %}
-                <div class="text-muted" style="font-size: 0.72rem;">{{ item.progress }}</div>
-            </div>
-            <!-- Remove button (only for queued items) -->
-            {% if item.status == 'queued' %}
-            <form method="POST" action="/queue/remove/{{ item.uid }}" class="ms-1">
-                <button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Remove"><i class="bi bi-x"></i></button>
-            </form>
-            {% endif %}
-        </div>
-        {% endfor %}
-        {% else %}
-        <div class="text-center text-muted py-4" id="queue-empty">
-            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-            Queue is empty. Click <strong>Burn Daily Limit</strong> to find viral videos or paste a URL above.
-        </div>
-        {% endif %}
-    </div>
-</div>
-
-<!-- History (inline) -->
-<div class="card mb-4">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-archive"></i> Upload History</span>
-        <span class="badge bg-secondary" id="history-count">{{ history_total }} uploaded</span>
-    </div>
-    <div class="table-responsive" id="history-container">
-        <table class="table table-sm table-hover mb-0">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Title</th>
-                    <th>Subreddit</th>
-                    <th>Author</th>
-                    <th>Score</th>
-                    <th>Duration</th>
-                    <th>Result</th>
-                </tr>
-            </thead>
-            <tbody id="history-body">
-                {% for u in history %}
-                <tr class="history-row">
-                    <td class="text-muted small text-nowrap">{{ u.uploaded_at }}</td>
-                    <td>
-                        {% if u.reddit_url %}
-                        <a href="{{ u.reddit_url }}" target="_blank" class="text-decoration-none">{{ u.title[:60] }}</a>
-                        {% else %}
-                        {{ u.title[:60] }}
-                        {% endif %}
-                    </td>
-                    <td>r/{{ u.subreddit }}</td>
-                    <td class="text-muted small">{% if u.author and u.author not in ('[deleted]', '[unknown]') %}u/{{ u.author }}{% endif %}</td>
-                    <td>{{ u.score }}</td>
-                    <td>{{ u.duration }}s</td>
-                    <td>
-                        {% if u.status == 'uploaded' and u.youtube_id %}
-                        <a href="https://www.youtube.com/shorts/{{ u.youtube_id }}" target="_blank" class="badge bg-success text-decoration-none">
-                            {{ u.youtube_id }} <i class="bi bi-box-arrow-up-right"></i>
-                        </a>
-                        {% elif u.status == 'failed' %}
-                        <span class="badge bg-danger" title="{{ u.error }}">Failed</span>
-                        {% else %}
-                        <span class="badge bg-secondary">{{ u.status }}</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% else %}
-                <tr id="history-empty"><td colspan="7" class="text-muted text-center py-4">No uploads yet</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    <div class="card-footer text-center">
-        <a href="/history" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-list"></i> View Full History
+<!-- ═══ Spotlight: Last Upload ═══ -->
+{% if done_items %}
+  {% set last = done_items[0] %}
+  <div class="ay-spotlight" id="spotlight">
+    <img class="ay-spotlight-thumb"
+         src="https://i.ytimg.com/vi/{{ last.youtube_id }}/oar2.jpg"
+         alt="Thumbnail"
+         onerror="this.style.display='none'">
+    <div class="ay-spotlight-info">
+      <div class="ay-spotlight-label"><i class="bi bi-check-circle-fill"></i> Latest Upload</div>
+      <div style="font-weight:600;margin-bottom:4px;" id="spotlight-title">{{ last.title }}</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--ay-text-muted);">
+        <a href="https://youtube.com/shorts/{{ last.youtube_id }}" target="_blank" class="ay-btn ay-btn-sm ay-btn-ghost">
+          <i class="bi bi-youtube"></i> Watch
         </a>
+        <span id="spotlight-time">{{ last.uploaded_at }}</span>
+      </div>
     </div>
+  </div>
+{% endif %}
+
+<!-- ═══ Pipeline Step Tracker ═══ -->
+<div class="ay-steps" id="step-tracker" style="{% if status.state == 'idle' %}display:none{% endif %}">
+  {% set step_map = {'scraping': 0, 'downloading': 1, 'processing': 2, 'uploading': 3} %}
+  {% set current_step = step_map.get(status.state, -1) %}
+  {% if current_step == -1 and active_item %}
+    {% set current_step = step_map.get(active_item.status, -1) %}
+  {% endif %}
+
+  {% set steps = [('bi-search', 'Scrape'), ('bi-cloud-download', 'Download'), ('bi-film', 'Process'), ('bi-upload', 'Upload')] %}
+  {% for icon, label in steps %}
+    {% if not loop.first %}
+      <div class="ay-step-line {% if loop.index0 <= current_step %}done{% endif %}"></div>
+    {% endif %}
+    <div class="ay-step {% if loop.index0 == current_step %}active{% elif loop.index0 < current_step %}done{% endif %}">
+      <span class="ay-step-icon">
+        {% if loop.index0 < current_step %}
+          <i class="bi bi-check"></i>
+        {% else %}
+          <i class="bi {{ icon }}"></i>
+        {% endif %}
+      </span>
+      <span>{{ label }}</span>
+    </div>
+  {% endfor %}
+</div>
+
+<!-- ═══ Queue Time Estimate ═══ -->
+{% if queued_count > 0 %}
+<div id="queue-estimate" style="font-size:0.8rem;color:var(--ay-text-muted);margin-bottom:16px;">
+  <i class="bi bi-clock"></i> ~{{ queued_count * 2 }} min remaining
+</div>
+{% else %}
+<div id="queue-estimate" style="font-size:0.8rem;color:var(--ay-text-muted);margin-bottom:16px;display:none;">
+</div>
+{% endif %}
+
+<!-- ═══ Controls ═══ -->
+<div class="ay-card" style="margin-bottom:24px;">
+  <div class="ay-card-header"><i class="bi bi-sliders"></i> Controls</div>
+  <div class="ay-card-body" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+
+    <!-- Grab Videos -->
+    <form method="POST" action="/queue/burn" id="form-grab" style="display:flex;gap:8px;align-items:center;">
+      <label class="ay-label" style="margin:0;white-space:nowrap;">Grab</label>
+      <input type="number" name="count" value="{{ videos_per_day }}" min="1" max="50"
+             class="ay-input" style="width:70px;">
+      <button type="submit" class="ay-btn ay-btn-primary">
+        <i class="bi bi-lightning-fill"></i> Grab Videos
+      </button>
+    </form>
+
+    <!-- URL Paste -->
+    <form method="POST" action="/submit" style="display:flex;gap:8px;align-items:center;flex:1;min-width:200px;">
+      <input type="url" name="url" placeholder="Paste Reddit URL..."
+             class="ay-input" style="flex:1;" required>
+      <button type="submit" class="ay-btn ay-btn-ghost"><i class="bi bi-plus-lg"></i> Add</button>
+    </form>
+
+    <div style="display:flex;gap:8px;align-items:center;">
+      <!-- Start Processing -->
+      <form method="POST" action="/queue/start" id="form-start" style="margin:0;">
+        <button type="button" class="ay-btn ay-btn-success" id="btn-start"
+                {% if queued_count == 0 or pipeline_running %}disabled{% endif %}
+                onclick="AY.confirm.show('Start Processing','Process {{ queued_count }} queued video{{ 's' if queued_count != 1 else '' }}?',()=>document.getElementById('form-start').submit(),'Start','ay-btn-success')">
+          <i class="bi bi-play-fill"></i> Start ({{ queued_count }})
+        </button>
+      </form>
+
+      <!-- Clear Queue -->
+      <button type="button" class="ay-btn ay-btn-ghost" id="btn-clear"
+              onclick="AY.confirm.show('Clear Queue','Remove all queued items?',()=>{fetch('/queue/clear',{method:'POST'}).then(()=>location.reload())},'Clear','ay-btn-danger')">
+        <i class="bi bi-trash"></i> Clear
+      </button>
+
+      <!-- Cancel (only when running) -->
+      {% if pipeline_running %}
+      <form method="POST" action="/queue/cancel" style="margin:0;">
+        <button type="submit" class="ay-btn ay-btn-danger" id="btn-cancel">
+          <i class="bi bi-x-circle"></i> Cancel
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Queue ═══ -->
+<div class="ay-card" style="margin-bottom:24px;">
+  <div class="ay-card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span><i class="bi bi-collection"></i> Queue</span>
+    <span class="ay-badge ay-badge-gray" id="queue-count-badge">{{ status.queue|length }} items</span>
+  </div>
+  <div class="ay-card-body" style="padding:0;" id="queue-container">
+    {% if status.queue %}
+      {% for item in status.queue %}
+      <div class="ay-queue-item"
+           data-uid="{{ item.uid }}"
+           data-status="{{ item.status }}"
+           {% if item.status == 'queued' %}draggable="true"{% endif %}>
+
+        {# Drag handle for queued items #}
+        {% if item.status == 'queued' %}
+          <span class="ay-queue-drag"><i class="bi bi-grip-vertical"></i></span>
+          <input type="checkbox" class="ay-queue-check" data-uid="{{ item.uid }}"
+                 style="accent-color:var(--ay-accent);cursor:pointer;">
+        {% endif %}
+
+        {# Status icon #}
+        <div class="ay-queue-status-icon"
+             style="background:{% if item.status == 'done' %}var(--ay-success-soft);color:var(--ay-success){% elif item.status == 'failed' %}var(--ay-danger-soft);color:var(--ay-danger){% elif item.status in ['downloading','processing','uploading'] %}var(--ay-info-soft);color:var(--ay-info){% elif item.status == 'skipped' %}var(--ay-border);color:var(--ay-text-muted){% else %}var(--ay-border);color:var(--ay-text-secondary){% endif %}">
+          <i class="bi {% if item.status == 'done' %}bi-check-lg{% elif item.status == 'failed' %}bi-x-lg{% elif item.status == 'downloading' %}bi-cloud-download{% elif item.status == 'processing' %}bi-film{% elif item.status == 'uploading' %}bi-upload{% elif item.status == 'skipped' %}bi-skip-forward{% else %}bi-hourglass{% endif %}"></i>
+        </div>
+
+        {# Info #}
+        <div class="ay-queue-info">
+          <div class="ay-queue-title">
+            <a href="{{ item.url }}" target="_blank" title="{{ item.title }}">{{ item.title }}</a>
+          </div>
+          <div class="ay-queue-meta">
+            <span class="ay-subreddit-pill" data-sub="{{ item.subreddit }}"
+                  style="background:var(--ay-accent-soft);color:var(--ay-accent);">
+              r/{{ item.subreddit }}
+            </span>
+            <span>u/{{ item.author }}</span>
+            <span><i class="bi bi-arrow-up"></i> {{ item.score }}</span>
+            {% if item.duration %}<span><i class="bi bi-clock"></i> {{ item.duration }}s</span>{% endif %}
+          </div>
+          {# Progress bar for active items #}
+          {% if item.status in ['downloading', 'processing', 'uploading'] %}
+          <div class="ay-queue-progress">
+            <div class="ay-queue-progress-bar" style="width:{{ item.progress or 0 }}%"></div>
+          </div>
+          {% endif %}
+          {% if item.error %}
+          <div style="font-size:0.72rem;color:var(--ay-danger);margin-top:4px;">{{ item.error }}</div>
+          {% endif %}
+        </div>
+
+        {# Status badge #}
+        <span class="ay-badge
+          {% if item.status == 'done' %}ay-badge-green
+          {% elif item.status == 'failed' %}ay-badge-red
+          {% elif item.status in ['downloading','processing','uploading'] %}ay-badge-blue
+          {% elif item.status == 'skipped' %}ay-badge-gray
+          {% else %}ay-badge-yellow{% endif %}">
+          {{ item.status }}
+        </span>
+
+        {# Actions #}
+        <div class="ay-queue-actions">
+          {% if item.youtube_id %}
+            <a href="https://youtube.com/shorts/{{ item.youtube_id }}" target="_blank"
+               class="ay-btn ay-btn-sm ay-btn-ghost" title="View on YouTube">
+              <i class="bi bi-youtube"></i>
+            </a>
+          {% endif %}
+          {% if item.status == 'queued' %}
+            <button class="ay-btn ay-btn-sm ay-btn-ghost" title="Remove"
+                    onclick="fetch('/queue/remove/{{ item.uid }}',{method:'POST'}).then(()=>this.closest('.ay-queue-item').remove())">
+              <i class="bi bi-x"></i>
+            </button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="ay-empty" id="queue-empty">
+        <div class="ay-empty-icon"><i class="bi bi-inbox"></i></div>
+        <div class="ay-empty-title">No videos in queue</div>
+        <div class="ay-empty-text">Grab viral videos from Reddit or paste a URL to get started.</div>
+        <div style="display:flex;gap:8px;justify-content:center;">
+          <button class="ay-btn ay-btn-primary" onclick="document.getElementById('form-grab').requestSubmit()">
+            <i class="bi bi-lightning-fill"></i> Grab Videos
+          </button>
+          <a href="/submit" class="ay-btn ay-btn-ghost"><i class="bi bi-plus-circle"></i> Submit URL</a>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ═══ Recent History ═══ -->
+<div class="ay-card">
+  <div class="ay-card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span><i class="bi bi-clock-history"></i> Recent Uploads</span>
+    <span class="ay-badge ay-badge-gray">{{ history_total }} total</span>
+  </div>
+  <div class="ay-card-body" style="padding:0;overflow-x:auto;">
+    {% if history %}
+    <table class="ay-table" id="history-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Time</th>
+          <th>Title</th>
+          <th>Subreddit</th>
+          <th>Score</th>
+          <th>Duration</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody id="history-body">
+        {% for item in history[:10] %}
+        <tr data-id="{{ item.youtube_id or '' }}">
+          <td>
+            {% if item.youtube_id %}
+              <img src="https://i.ytimg.com/vi/{{ item.youtube_id }}/default.jpg"
+                   style="width:48px;height:27px;object-fit:cover;border-radius:4px;background:var(--ay-border);"
+                   onerror="this.style.display='none'" alt="">
+            {% endif %}
+          </td>
+          <td style="white-space:nowrap;color:var(--ay-text-muted);font-size:0.8rem;">
+            <span class="timeago" data-time="{{ item.uploaded_at }}">{{ item.uploaded_at }}</span>
+          </td>
+          <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <a href="{{ item.reddit_url }}" target="_blank" title="{{ item.title }}">{{ item.title }}</a>
+          </td>
+          <td>
+            <span class="ay-subreddit-pill" data-sub="{{ item.subreddit }}"
+                  style="background:var(--ay-accent-soft);color:var(--ay-accent);">
+              r/{{ item.subreddit }}
+            </span>
+          </td>
+          <td>{{ item.score }}</td>
+          <td>{{ item.duration }}s</td>
+          <td>
+            {% if item.status == 'uploaded' and item.youtube_id %}
+              <a href="https://youtube.com/shorts/{{ item.youtube_id }}" target="_blank"
+                 class="ay-badge ay-badge-green"><i class="bi bi-youtube"></i> Live</a>
+            {% elif item.status == 'failed' %}
+              <span class="ay-badge ay-badge-red" title="{{ item.error or '' }}">
+                <i class="bi bi-x-circle"></i> Failed
+              </span>
+              <button class="ay-btn ay-btn-sm ay-btn-ghost" title="Retry"
+                      onclick="fetch('/queue/retry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:'{{ item.reddit_url }}'})}).then(()=>{AY.toast.show('Retrying...','info');setTimeout(()=>location.reload(),1000)})">
+                <i class="bi bi-arrow-clockwise"></i>
+              </button>
+            {% else %}
+              <span class="ay-badge ay-badge-gray">{{ item.status }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="ay-empty">
+      <div class="ay-empty-icon"><i class="bi bi-clock-history"></i></div>
+      <div class="ay-empty-title">No uploads yet</div>
+      <div class="ay-empty-text">Completed uploads will appear here.</div>
+    </div>
+    {% endif %}
+  </div>
+  {% if history_total > 10 %}
+  <div class="ay-card-footer" style="text-align:center;">
+    <a href="/history" class="ay-btn ay-btn-ghost ay-btn-sm">View all {{ history_total }} uploads <i class="bi bi-arrow-right"></i></a>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
-<style>
-@keyframes slideDown {
-    from { opacity: 0; transform: translateY(-30px); background-color: rgba(25, 135, 84, 0.15); }
-    to   { opacity: 1; transform: translateY(0); background-color: transparent; }
-}
-.history-row-new {
-    animation: slideDown 0.8s ease-out;
-}
-</style>
 <script>
-const statusIcons = {
-    queued: '<i class="bi bi-hourglass text-muted fs-5"></i>',
-    downloading: '<div class="spinner-border spinner-border-sm text-primary" role="status"></div>',
-    processing: '<div class="spinner-border spinner-border-sm text-warning" role="status"></div>',
-    uploading: '<div class="spinner-border spinner-border-sm text-info" role="status"></div>',
-    done: '<i class="bi bi-check-circle-fill text-success fs-5"></i>',
-    failed: '<i class="bi bi-x-circle-fill text-danger fs-5"></i>',
-    skipped: '<i class="bi bi-skip-forward-fill text-muted fs-5"></i>',
-};
+(function() {
+  'use strict';
 
-function badgeHtml(item) {
-    if (item.status === 'done' && item.youtube_id) {
-        return `<a href="https://www.youtube.com/shorts/${item.youtube_id}" target="_blank" class="badge bg-success text-decoration-none">Uploaded <i class="bi bi-box-arrow-up-right"></i></a>`;
-    }
-    const map = {
-        queued: 'bg-secondary">Queued',
-        downloading: 'bg-primary">Downloading...',
-        processing: 'bg-warning text-dark">Processing...',
-        uploading: 'bg-info">Uploading...',
-        failed: 'bg-danger">Failed',
-        skipped: 'bg-secondary">Skipped',
-    };
-    return `<span class="badge ${map[item.status] || 'bg-secondary">Unknown'}</span>`;
-}
+  /* ── State tracking for diff-based updates ── */
+  let prevDoneUids = new Set();
+  let prevQueueUids = new Map(); // uid -> status
+  let prevState = '{{ status.state }}';
 
-function esc(s) { return s.replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  // Initialize prevDoneUids from current queue
+  document.querySelectorAll('.ay-queue-item[data-status="done"]').forEach(el => {
+    prevDoneUids.add(el.dataset.uid);
+  });
 
-function renderQueue(queue) {
+  /* ── Subreddit pill coloring ── */
+  function colorSubPills() {
+    document.querySelectorAll('.ay-subreddit-pill[data-sub]').forEach(pill => {
+      const cls = AY.getSubColor(pill.dataset.sub);
+      pill.setAttribute('data-color', cls);
+    });
+  }
+  colorSubPills();
+
+  /* ── Timeago initial pass ── */
+  function updateTimeagos() {
+    document.querySelectorAll('.timeago[data-time]').forEach(el => {
+      el.textContent = AY.timeago(el.dataset.time);
+    });
+  }
+  updateTimeagos();
+
+  /* ── Ring chart helper ── */
+  function setRing(id, pct) {
+    const el = document.getElementById(id);
+    if (el) el.setAttribute('stroke-dasharray', Math.min(100, Math.max(0, pct)).toFixed(1) + ', 100');
+  }
+
+  /* ── Scheduler countdown ── */
+  {% if scheduler_running and next_run %}
+  const nextRunDate = new Date('{{ next_run }}');
+  function updateCountdown() {
+    const el = document.getElementById('countdown-text');
+    if (!el) return;
+    const diff = Math.max(0, (nextRunDate - new Date()) / 1000);
+    if (diff <= 0) { el.textContent = 'Starting soon...'; return; }
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+    el.textContent = 'Next run in ' + (h > 0 ? h + 'h ' : '') + m + 'm';
+  }
+  updateCountdown();
+  setInterval(updateCountdown, 1000);
+  {% endif %}
+
+  /* ── Drag-to-reorder ── */
+  let dragSrcEl = null;
+
+  function initDragHandlers() {
     const container = document.getElementById('queue-container');
-    if (!queue.length) {
-        container.innerHTML = `<div class="text-center text-muted py-4"><i class="bi bi-inbox fs-3 d-block mb-2"></i>Queue is empty. Click <strong>Burn Daily Limit</strong> to find viral videos or paste a URL above.</div>`;
-        return;
-    }
-    let html = '';
-    queue.forEach(item => {
-        const titleText = esc(item.title || '').substring(0, 70);
-        const titleHtml = item.url
-            ? `<a href="${esc(item.url)}" target="_blank" class="text-decoration-none">${titleText}</a>`
-            : titleText;
-        const sub = esc(item.subreddit || '');
-        const author = item.author && !['[deleted]', '[unknown]'].includes(item.author) ? ` &middot; u/${esc(item.author)}` : '';
-        const pts = item.score ? ` &middot; ${item.score} pts` : '';
-        const dur = item.duration ? ` &middot; ${item.duration}s` : '';
-        const removeBtn = item.status === 'queued'
-            ? `<form method="POST" action="/queue/remove/${item.uid}" class="ms-1"><button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Remove"><i class="bi bi-x"></i></button></form>`
-            : '';
-        html += `
-        <div class="d-flex align-items-center border-bottom px-3 py-2 queue-item" data-uid="${item.uid}">
-            <div class="me-3" style="width:32px;text-align:center;">${statusIcons[item.status] || ''}</div>
-            <div class="flex-grow-1 me-3">
-                <div class="fw-semibold" style="font-size:0.9rem;">${titleHtml}</div>
-                <div class="text-muted" style="font-size:0.78rem;">r/${sub}${author}${pts}${dur}</div>
-            </div>
-            <div class="text-end me-2" style="min-width:180px;">
-                ${badgeHtml(item)}
-                <div class="text-muted" style="font-size:0.72rem;">${esc(item.progress || '')}</div>
-            </div>
-            ${removeBtn}
-        </div>`;
+    if (!container) return;
+
+    container.querySelectorAll('.ay-queue-item[draggable="true"]').forEach(item => {
+      item.addEventListener('dragstart', function(e) {
+        dragSrcEl = this;
+        this.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', this.dataset.uid);
+      });
+
+      item.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const bounding = this.getBoundingClientRect();
+        const offset = e.clientY - bounding.top;
+        if (offset > bounding.height / 2) {
+          this.style.borderBottom = '2px solid var(--ay-accent)';
+          this.style.borderTop = '';
+        } else {
+          this.style.borderTop = '2px solid var(--ay-accent)';
+          this.style.borderBottom = '';
+        }
+      });
+
+      item.addEventListener('dragleave', function() {
+        this.style.borderTop = '';
+        this.style.borderBottom = '';
+      });
+
+      item.addEventListener('drop', function(e) {
+        e.preventDefault();
+        this.style.borderTop = '';
+        this.style.borderBottom = '';
+        if (dragSrcEl === this) return;
+
+        const bounding = this.getBoundingClientRect();
+        const offset = e.clientY - bounding.top;
+        const container = this.parentNode;
+
+        if (offset > bounding.height / 2) {
+          container.insertBefore(dragSrcEl, this.nextSibling);
+        } else {
+          container.insertBefore(dragSrcEl, this);
+        }
+
+        // Send new order to server
+        const uids = Array.from(container.querySelectorAll('.ay-queue-item[data-uid]'))
+          .map(el => el.dataset.uid);
+        fetch('/queue/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uids: uids })
+        });
+      });
+
+      item.addEventListener('dragend', function() {
+        this.classList.remove('dragging');
+      });
     });
-    container.innerHTML = html;
-}
+  }
+  initDragHandlers();
 
-function updateArmControls(data) {
-    const el = document.getElementById('arm-controls');
-    const queued = data.queue_summary.queued;
-    const running = data.state === 'running' || data.state === 'scraping';
+  /* ── Bulk select ── */
+  document.addEventListener('change', function(e) {
+    if (!e.target.classList.contains('ay-queue-check')) return;
+    const checked = document.querySelectorAll('.ay-queue-check:checked');
+    // Could add bulk action bar here if needed
+  });
 
-    if (data.armed) {
-        el.innerHTML = `
-            <form method="POST" action="/queue/start">
-                <button class="btn btn-success" ${running ? 'disabled' : ''}><i class="bi bi-play-fill"></i> Start Processing</button>
-            </form>
-            <form method="POST" action="/queue/disarm">
-                <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-x"></i> Disarm</button>
-            </form>
-            <form method="POST" action="/queue/clear">
-                <button class="btn btn-outline-secondary btn-sm" ${running ? 'disabled' : ''}><i class="bi bi-trash"></i> Clear</button>
-            </form>`;
+  /* ── Status badge rendering ── */
+  function statusBadgeClass(status) {
+    switch (status) {
+      case 'done': return 'ay-badge-green';
+      case 'failed': return 'ay-badge-red';
+      case 'downloading': case 'processing': case 'uploading': return 'ay-badge-blue';
+      case 'skipped': return 'ay-badge-gray';
+      default: return 'ay-badge-yellow';
+    }
+  }
+
+  function statusIconClass(status) {
+    switch (status) {
+      case 'done': return 'bi-check-lg';
+      case 'failed': return 'bi-x-lg';
+      case 'downloading': return 'bi-cloud-download';
+      case 'processing': return 'bi-film';
+      case 'uploading': return 'bi-upload';
+      case 'skipped': return 'bi-skip-forward';
+      default: return 'bi-hourglass';
+    }
+  }
+
+  function statusIconStyle(status) {
+    switch (status) {
+      case 'done': return 'background:var(--ay-success-soft);color:var(--ay-success)';
+      case 'failed': return 'background:var(--ay-danger-soft);color:var(--ay-danger)';
+      case 'downloading': case 'processing': case 'uploading':
+        return 'background:var(--ay-info-soft);color:var(--ay-info)';
+      default: return 'background:var(--ay-border);color:var(--ay-text-secondary)';
+    }
+  }
+
+  /* ── Build a queue item element ── */
+  function buildQueueItemHTML(item) {
+    const isQueued = item.status === 'queued';
+    const isActive = ['downloading', 'processing', 'uploading'].includes(item.status);
+
+    let html = '';
+
+    if (isQueued) {
+      html += '<span class="ay-queue-drag"><i class="bi bi-grip-vertical"></i></span>';
+      html += '<input type="checkbox" class="ay-queue-check" data-uid="' + AY.esc(item.uid) + '" style="accent-color:var(--ay-accent);cursor:pointer;">';
+    }
+
+    html += '<div class="ay-queue-status-icon" style="' + statusIconStyle(item.status) + '">'
+          + '<i class="bi ' + statusIconClass(item.status) + '"></i></div>';
+
+    html += '<div class="ay-queue-info">'
+          + '<div class="ay-queue-title"><a href="' + AY.esc(item.url) + '" target="_blank" title="' + AY.esc(item.title) + '">' + AY.esc(item.title) + '</a></div>'
+          + '<div class="ay-queue-meta">'
+          + '<span class="ay-subreddit-pill" data-sub="' + AY.esc(item.subreddit) + '" style="background:var(--ay-accent-soft);color:var(--ay-accent);">r/' + AY.esc(item.subreddit) + '</span>'
+          + '<span>u/' + AY.esc(item.author) + '</span>'
+          + '<span><i class="bi bi-arrow-up"></i> ' + item.score + '</span>';
+    if (item.duration) {
+      html += '<span><i class="bi bi-clock"></i> ' + item.duration + 's</span>';
+    }
+    html += '</div>';
+
+    if (isActive) {
+      html += '<div class="ay-queue-progress"><div class="ay-queue-progress-bar" style="width:' + (item.progress || 0) + '%"></div></div>';
+    }
+    if (item.error) {
+      html += '<div style="font-size:0.72rem;color:var(--ay-danger);margin-top:4px;">' + AY.esc(item.error) + '</div>';
+    }
+    html += '</div>';
+
+    html += '<span class="ay-badge ' + statusBadgeClass(item.status) + '">' + item.status + '</span>';
+
+    html += '<div class="ay-queue-actions">';
+    if (item.youtube_id) {
+      html += '<a href="https://youtube.com/shorts/' + AY.esc(item.youtube_id) + '" target="_blank" class="ay-btn ay-btn-sm ay-btn-ghost" title="View on YouTube"><i class="bi bi-youtube"></i></a>';
+    }
+    if (isQueued) {
+      html += '<button class="ay-btn ay-btn-sm ay-btn-ghost" title="Remove" onclick="fetch(\'/queue/remove/' + AY.esc(item.uid) + '\',{method:\'POST\'}).then(()=>this.closest(\'.ay-queue-item\').remove())"><i class="bi bi-x"></i></button>';
+    }
+    html += '</div>';
+
+    return html;
+  }
+
+  /* ── Pipeline step index mapper ── */
+  function getStepIndex(state, activeStatus) {
+    const map = { 'scraping': 0, 'downloading': 1, 'processing': 2, 'uploading': 3 };
+    if (map[state] !== undefined) return map[state];
+    if (activeStatus && map[activeStatus] !== undefined) return map[activeStatus];
+    return -1;
+  }
+
+  /* ── Update step tracker ── */
+  function updateStepTracker(state, activeStatus) {
+    const tracker = document.getElementById('step-tracker');
+    if (!tracker) return;
+
+    if (state === 'idle') {
+      tracker.style.display = 'none';
+      return;
+    }
+    tracker.style.display = '';
+
+    const stepIndex = getStepIndex(state, activeStatus);
+    const steps = tracker.querySelectorAll('.ay-step');
+    const lines = tracker.querySelectorAll('.ay-step-line');
+
+    steps.forEach((step, i) => {
+      step.classList.remove('active', 'done');
+      const icon = step.querySelector('.ay-step-icon i');
+      if (i === stepIndex) {
+        step.classList.add('active');
+        icon.className = 'bi ' + ['bi-search', 'bi-cloud-download', 'bi-film', 'bi-upload'][i];
+      } else if (i < stepIndex) {
+        step.classList.add('done');
+        icon.className = 'bi bi-check';
+      } else {
+        icon.className = 'bi ' + ['bi-search', 'bi-cloud-download', 'bi-film', 'bi-upload'][i];
+      }
+    });
+
+    lines.forEach((line, i) => {
+      line.classList.toggle('done', i < stepIndex);
+    });
+  }
+
+  /* ── Logo pulse ── */
+  function updateLogoPulse(state) {
+    ['logo-icon', 'mobile-logo-icon'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('pipeline-active', state !== 'idle');
+    });
+  }
+  updateLogoPulse('{{ status.state }}');
+
+  /* ── Quota ring color helper ── */
+  function quotaColor(pct) {
+    if (pct < 50) return 'var(--ay-success)';
+    if (pct < 80) return 'var(--ay-warning)';
+    return 'var(--ay-danger)';
+  }
+
+  /* ── History row builder ── */
+  function buildHistoryRow(item) {
+    let thumb = '';
+    if (item.youtube_id) {
+      thumb = '<img src="https://i.ytimg.com/vi/' + AY.esc(item.youtube_id) + '/default.jpg" style="width:48px;height:27px;object-fit:cover;border-radius:4px;background:var(--ay-border);" onerror="this.style.display=\'none\'" alt="">';
+    }
+
+    let result = '';
+    if (item.status === 'uploaded' && item.youtube_id) {
+      result = '<a href="https://youtube.com/shorts/' + AY.esc(item.youtube_id) + '" target="_blank" class="ay-badge ay-badge-green"><i class="bi bi-youtube"></i> Live</a>';
+    } else if (item.status === 'failed') {
+      result = '<span class="ay-badge ay-badge-red" title="' + AY.esc(item.error || '') + '"><i class="bi bi-x-circle"></i> Failed</span>';
+      result += ' <button class="ay-btn ay-btn-sm ay-btn-ghost" title="Retry" onclick="fetch(\'/queue/retry\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({url:\'' + AY.esc(item.reddit_url) + '\'})}).then(()=>{AY.toast.show(\'Retrying...\',\'info\');setTimeout(()=>location.reload(),1000)})"><i class="bi bi-arrow-clockwise"></i></button>';
     } else {
-        el.innerHTML = `
-            <form method="POST" action="/queue/arm">
-                <button class="btn btn-warning" ${queued === 0 ? 'disabled' : ''}><i class="bi bi-shield-check"></i> Arm Pipeline (${queued})</button>
-            </form>
-            <form method="POST" action="/queue/clear">
-                <button class="btn btn-outline-secondary btn-sm" ${running ? 'disabled' : ''}><i class="bi bi-trash"></i> Clear</button>
-            </form>`;
-    }
-}
-
-let knownHistoryIds = new Set();
-// Seed with server-rendered history
-document.querySelectorAll('#history-body tr[data-ytid]').forEach(r => knownHistoryIds.add(r.dataset.ytid));
-
-function renderHistory(uploads, total) {
-    const tbody = document.getElementById('history-body');
-    document.getElementById('history-count').textContent = total + ' uploaded';
-
-    if (!uploads.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center py-4">No uploads yet</td></tr>';
-        return;
+      result = '<span class="ay-badge ay-badge-gray">' + AY.esc(item.status) + '</span>';
     }
 
-    let html = '';
-    uploads.forEach(u => {
-        const isNew = u.youtube_id && !knownHistoryIds.has(u.youtube_id);
-        const cls = isNew ? 'history-row-new' : '';
-        if (u.youtube_id) knownHistoryIds.add(u.youtube_id);
+    return '<tr data-id="' + AY.esc(item.youtube_id || '') + '">'
+      + '<td>' + thumb + '</td>'
+      + '<td style="white-space:nowrap;color:var(--ay-text-muted);font-size:0.8rem;"><span class="timeago" data-time="' + AY.esc(item.uploaded_at) + '">' + AY.timeago(item.uploaded_at) + '</span></td>'
+      + '<td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="' + AY.esc(item.reddit_url) + '" target="_blank" title="' + AY.esc(item.title) + '">' + AY.esc(item.title) + '</a></td>'
+      + '<td><span class="ay-subreddit-pill" data-sub="' + AY.esc(item.subreddit) + '" style="background:var(--ay-accent-soft);color:var(--ay-accent);">r/' + AY.esc(item.subreddit) + '</span></td>'
+      + '<td>' + item.score + '</td>'
+      + '<td>' + (item.duration || '') + 's</td>'
+      + '<td>' + result + '</td>'
+      + '</tr>';
+  }
 
-        const title = esc(u.title || '').substring(0, 60);
-        const sub = esc(u.subreddit || '');
-        const authorStr = u.author && !['[deleted]', '[unknown]'].includes(u.author) ? `u/${esc(u.author)}` : '';
-        const titleCell = u.reddit_url
-            ? `<a href="${esc(u.reddit_url)}" target="_blank" class="text-decoration-none">${title}</a>`
-            : title;
-        let resultCell;
-        if (u.status === 'uploaded' && u.youtube_id) {
-            resultCell = `<a href="https://www.youtube.com/shorts/${esc(u.youtube_id)}" target="_blank" class="badge bg-success text-decoration-none">${esc(u.youtube_id)} <i class="bi bi-box-arrow-up-right"></i></a>`;
-        } else if (u.status === 'failed') {
-            resultCell = `<span class="badge bg-danger" title="${esc(u.error || '')}">Failed</span>`;
+  /* ════════════════════════════════════════════════════════════
+     Polling — every 2 seconds
+     ════════════════════════════════════════════════════════════ */
+  async function poll() {
+    try {
+      const [statusRes, quotaRes, historyRes] = await Promise.all([
+        fetch('/api/status').then(r => r.json()),
+        fetch('/api/quota').then(r => r.json()),
+        fetch('/api/history').then(r => r.json())
+      ]);
+
+      // ── Update hero stats ──
+      const uploadsToday = quotaRes.uploads_today || 0;
+      const maxUp = 6;
+      const el = id => document.getElementById(id);
+
+      el('stat-uploads').textContent = uploadsToday + '/' + maxUp;
+      el('ring-uploads-label').textContent = uploadsToday;
+      setRing('ring-uploads', (uploadsToday / maxUp) * 100);
+
+      const queuedNow = (statusRes.queue || []).filter(i => i.status === 'queued').length;
+      el('stat-queued').textContent = queuedNow;
+
+      // Success rate from history
+      const histUploads = historyRes.uploads || [];
+      const doneCount = histUploads.filter(i => i.status === 'uploaded').length;
+      const failCount = histUploads.filter(i => i.status === 'failed').length;
+      const total = doneCount + failCount;
+      const sr = total > 0 ? Math.round(doneCount / total * 100) : 0;
+      el('stat-success').textContent = sr + '%';
+      el('ring-success-label').textContent = sr + '%';
+      setRing('ring-success', sr);
+
+      const quotaPct = quotaRes.percent_used || 0;
+      el('stat-quota').textContent = quotaPct + '%';
+      el('ring-quota-label').textContent = quotaPct + '%';
+      setRing('ring-quota', quotaPct);
+      const ringQuota = document.getElementById('ring-quota');
+      if (ringQuota) ringQuota.setAttribute('stroke', quotaColor(quotaPct));
+
+      // ── Queue count badge ──
+      const queueBadge = el('queue-count-badge');
+      const queueArr = statusRes.queue || [];
+      if (queueBadge) queueBadge.textContent = queueArr.length + ' items';
+
+      // ── Queue estimate ──
+      const estEl = el('queue-estimate');
+      if (estEl) {
+        if (queuedNow > 0) {
+          estEl.style.display = '';
+          estEl.innerHTML = '<i class="bi bi-clock"></i> ~' + (queuedNow * 2) + ' min remaining';
         } else {
-            resultCell = `<span class="badge bg-secondary">${esc(u.status || '')}</span>`;
+          estEl.style.display = 'none';
+        }
+      }
+
+      // ── Update start button ──
+      const btnStart = el('btn-start');
+      if (btnStart) {
+        const isRunning = statusRes.state !== 'idle';
+        btnStart.disabled = queuedNow === 0 || isRunning;
+        btnStart.innerHTML = '<i class="bi bi-play-fill"></i> Start (' + queuedNow + ')';
+      }
+
+      // ── Logo pulse + step tracker ──
+      const state = statusRes.state || 'idle';
+      updateLogoPulse(state);
+
+      const activeItem = (statusRes.queue || []).find(i =>
+        ['downloading', 'processing', 'uploading'].includes(i.status));
+      updateStepTracker(state, activeItem ? activeItem.status : null);
+
+      // ── Queue items — diff update ──
+      const container = el('queue-container');
+      if (container) {
+        const newUidMap = new Map();
+        queueArr.forEach(item => newUidMap.set(item.uid, item));
+
+        const existingEls = container.querySelectorAll('.ay-queue-item[data-uid]');
+        const existingUids = new Set();
+
+        // Update or remove existing items
+        existingEls.forEach(itemEl => {
+          const uid = itemEl.dataset.uid;
+          existingUids.add(uid);
+
+          if (!newUidMap.has(uid)) {
+            itemEl.remove();
+            return;
+          }
+
+          const item = newUidMap.get(uid);
+          const oldStatus = itemEl.dataset.status;
+
+          if (oldStatus !== item.status || ['downloading', 'processing', 'uploading'].includes(item.status)) {
+            // Status changed or active item — re-render inner content
+            itemEl.dataset.status = item.status;
+            itemEl.draggable = item.status === 'queued';
+            itemEl.innerHTML = buildQueueItemHTML(item);
+          }
+        });
+
+        // Add new items
+        const emptyEl = container.querySelector('.ay-empty');
+        queueArr.forEach(item => {
+          if (!existingUids.has(item.uid)) {
+            if (emptyEl) emptyEl.remove();
+            const div = document.createElement('div');
+            div.className = 'ay-queue-item';
+            div.dataset.uid = item.uid;
+            div.dataset.status = item.status;
+            if (item.status === 'queued') div.draggable = true;
+            div.innerHTML = buildQueueItemHTML(item);
+            container.appendChild(div);
+          }
+        });
+
+        // Show empty state if queue is empty
+        if (queueArr.length === 0 && !container.querySelector('.ay-empty')) {
+          container.innerHTML = '<div class="ay-empty" id="queue-empty">'
+            + '<div class="ay-empty-icon"><i class="bi bi-inbox"></i></div>'
+            + '<div class="ay-empty-title">No videos in queue</div>'
+            + '<div class="ay-empty-text">Grab viral videos from Reddit or paste a URL to get started.</div>'
+            + '<div style="display:flex;gap:8px;justify-content:center;">'
+            + '<button class="ay-btn ay-btn-primary" onclick="document.getElementById(\'form-grab\').requestSubmit()"><i class="bi bi-lightning-fill"></i> Grab Videos</button>'
+            + '<a href="/submit" class="ay-btn ay-btn-ghost"><i class="bi bi-plus-circle"></i> Submit URL</a>'
+            + '</div></div>';
         }
 
-        html += `<tr class="history-row ${cls}" data-ytid="${esc(u.youtube_id || '')}">
-            <td class="text-muted small text-nowrap">${esc(u.uploaded_at || '')}</td>
-            <td>${titleCell}</td>
-            <td>r/${sub}</td>
-            <td class="text-muted small">${authorStr}</td>
-            <td>${u.score || 0}</td>
-            <td>${u.duration || 0}s</td>
-            <td>${resultCell}</td>
-        </tr>`;
-    });
-    tbody.innerHTML = html;
-}
+        initDragHandlers();
+        colorSubPills();
+      }
 
-function poll() {
-    fetch('/api/status').then(r => r.json()).then(data => {
-        // State banner
-        const banner = document.getElementById('state-banner');
-        if (data.state === 'idle') {
-            banner.classList.add('d-none');
-        } else {
-            banner.classList.remove('d-none');
-            banner.className = 'alert d-flex align-items-center mb-4 ' + (data.state === 'scraping' ? 'alert-info' : 'alert-primary');
-            document.getElementById('state-message').textContent = data.message || '';
+      // ── Detect new done items — confetti + notify ──
+      const currentDoneUids = new Set();
+      queueArr.forEach(item => {
+        if (item.status === 'done') currentDoneUids.add(item.uid);
+      });
+
+      currentDoneUids.forEach(uid => {
+        if (!prevDoneUids.has(uid)) {
+          const item = newUidMap ? newUidMap.get(uid) : null;
+          AY.confetti.fire();
+          if (item) {
+            AY.notify.send('Upload Complete', item.title || 'A video was uploaded successfully');
+          }
         }
+      });
+      prevDoneUids = currentDoneUids;
 
-        // Fully re-render queue from API data
-        renderQueue(data.queue);
-        document.getElementById('queue-count').textContent = data.queue.length + ' items';
+      // ── Show/hide cancel button based on pipeline state ──
+      const cancelBtn = el('btn-cancel');
+      if (cancelBtn) {
+        cancelBtn.closest('form').style.display = state === 'idle' ? 'none' : '';
+      }
 
-        // Update arm/start controls
-        updateArmControls(data);
+      // ── Update history table ──
+      const histBody = el('history-body');
+      if (histBody && histUploads.length > 0) {
+        const rows = histUploads.slice(0, 10).map(buildHistoryRow).join('');
+        histBody.innerHTML = rows;
+        updateTimeagos();
+        colorSubPills();
+      }
 
-        // Disable burn button while running
-        const burnBtn = document.querySelector('[action="/queue/burn"] button');
-        if (burnBtn) burnBtn.disabled = (data.state !== 'idle');
-    });
+      prevState = state;
 
-    fetch('/api/quota').then(r => r.json()).then(q => {
-        document.getElementById('quota-uploads').textContent = q.uploads_today;
-        document.getElementById('quota-remaining-uploads').textContent = q.max_uploads_remaining;
-        document.getElementById('quota-used').textContent = q.used;
-        const bar = document.getElementById('quota-bar');
-        bar.style.width = q.percent_used + '%';
-        bar.className = 'progress-bar ' + (q.percent_used < 50 ? 'bg-success' : q.percent_used < 80 ? 'bg-warning' : 'bg-danger');
-    });
+    } catch (err) {
+      // Silently fail — will retry on next poll
+    }
+  }
 
-    fetch('/api/history').then(r => r.json()).then(h => {
-        renderHistory(h.uploads, h.total);
-    });
-}
-setInterval(poll, 2000);
+  setInterval(poll, 2000);
+
+})();
 </script>
 {% endblock %}

@@ -2,102 +2,668 @@
 {% block title %}Settings — Auto Youtuber{% endblock %}
 
 {% block content %}
-<h4 class="mb-4"><i class="bi bi-gear"></i> Settings</h4>
+<!-- ═══ Page Header ═══ -->
+<div class="ay-page-header">
+  <div>
+    <h1 class="ay-page-title"><i class="bi bi-gear"></i> Settings</h1>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <label class="ay-btn ay-btn-ghost ay-btn-sm" style="cursor:pointer;">
+      <i class="bi bi-upload"></i> Import
+      <input type="file" id="import-file" accept=".json" style="display:none;">
+    </label>
+    <button class="ay-btn ay-btn-ghost ay-btn-sm" id="export-btn">
+      <i class="bi bi-download"></i> Export
+    </button>
+  </div>
+</div>
 
-<form method="POST" action="/settings">
-    <!-- Reddit API -->
-    <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-reddit"></i> Reddit API</div>
-        <div class="card-body row g-3">
-            <div class="col-md-6">
-                <label class="form-label">Client ID</label>
-                <input type="text" name="REDDIT_CLIENT_ID" class="form-control" value="{{ settings.REDDIT_CLIENT_ID }}" placeholder="From reddit.com/prefs/apps">
-            </div>
-            <div class="col-md-6">
-                <label class="form-label">Client Secret</label>
-                <input type="password" name="REDDIT_CLIENT_SECRET" class="form-control" value="{{ settings.REDDIT_CLIENT_SECRET }}">
-            </div>
-            <div class="col-md-6">
-                <label class="form-label">User Agent</label>
-                <input type="text" name="REDDIT_USER_AGENT" class="form-control" value="{{ settings.REDDIT_USER_AGENT }}">
-            </div>
-        </div>
+<!-- ═══ Tabs ═══ -->
+<div class="ay-tabs" id="settings-tabs">
+  <button class="ay-tab active" data-tab="reddit"><i class="bi bi-reddit"></i> Reddit</button>
+  <button class="ay-tab" data-tab="youtube"><i class="bi bi-youtube"></i> YouTube</button>
+  <button class="ay-tab" data-tab="pipeline"><i class="bi bi-funnel"></i> Pipeline</button>
+  <button class="ay-tab" data-tab="advanced"><i class="bi bi-sliders"></i> Advanced</button>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Reddit Tab -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="ay-tab-panel active" data-panel="reddit">
+  <div class="ay-card">
+    <div class="ay-card-header" style="display:flex;align-items:center;justify-content:space-between;">
+      <span><i class="bi bi-reddit"></i> Reddit API</span>
+      <span class="ay-status-dot {{ 'connected' if settings.REDDIT_CLIENT_ID else 'disconnected' }}"
+            style="margin-left:8px;"
+            data-tooltip="{{ 'Connected' if settings.REDDIT_CLIENT_ID else 'Not configured' }}"></span>
     </div>
+    <div class="ay-card-body">
+      <!-- Client ID -->
+      <div style="margin-bottom:16px;">
+        <label class="ay-label" for="reddit-client-id">Client ID</label>
+        <input type="text" id="reddit-client-id" name="REDDIT_CLIENT_ID" class="ay-input"
+               value="{{ settings.REDDIT_CLIENT_ID }}" placeholder="From reddit.com/prefs/apps">
+        <span class="ay-help-text">Create an app at reddit.com/prefs/apps (script type)</span>
+      </div>
 
-    <!-- Scraping -->
-    <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-search"></i> Scraping</div>
-        <div class="card-body row g-3">
-            <div class="col-md-6">
-                <label class="form-label">Subreddits (comma-separated)</label>
-                <input type="text" name="SUBREDDITS" class="form-control" value="{{ settings.SUBREDDITS }}" placeholder="funny,videos,Unexpected">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Time Filter</label>
-                <select name="TIME_FILTER" class="form-select">
-                    {% for opt in ['day', 'week', 'month', 'year', 'all'] %}
-                    <option value="{{ opt }}" {{ 'selected' if settings.TIME_FILTER == opt }}>{{ opt }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Post Limit</label>
-                <input type="number" name="POST_LIMIT" class="form-control" value="{{ settings.POST_LIMIT }}" min="1" max="100">
-            </div>
+      <!-- Client Secret -->
+      <div style="margin-bottom:16px;">
+        <label class="ay-label" for="reddit-client-secret">Client Secret</label>
+        <input type="password" id="reddit-client-secret" name="REDDIT_CLIENT_SECRET" class="ay-input"
+               value="{{ settings.REDDIT_CLIENT_SECRET }}">
+      </div>
+
+      <!-- User Agent -->
+      <div style="margin-bottom:16px;">
+        <label class="ay-label" for="reddit-user-agent">User Agent</label>
+        <input type="text" id="reddit-user-agent" name="REDDIT_USER_AGENT" class="ay-input"
+               value="{{ settings.REDDIT_USER_AGENT }}" placeholder="AutoYoutuber/1.0">
+      </div>
+
+      <!-- Test Connection -->
+      <div style="margin-bottom:24px;">
+        <button type="button" class="ay-btn ay-btn-ghost ay-btn-sm" id="test-reddit-btn">
+          <i class="bi bi-plug"></i> Test Connection
+        </button>
+      </div>
+
+      <!-- Subreddits Tag Input -->
+      <div style="margin-bottom:16px;">
+        <label class="ay-label">Subreddits</label>
+        <div class="ay-tags-wrap" id="subreddit-tags">
+          {% for sub in settings.SUBREDDITS.split(',') if sub.strip() %}
+          <span class="ay-tag" data-value="{{ sub.strip() }}">
+            {{ sub.strip() }}
+            <button type="button" class="ay-tag-remove" aria-label="Remove">&times;</button>
+          </span>
+          {% endfor %}
+          <input type="text" class="ay-tag-input" id="subreddit-input" placeholder="Add subreddit...">
         </div>
-    </div>
-
-    <!-- YouTube -->
-    <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-youtube"></i> YouTube</div>
-        <div class="card-body row g-3">
-            <div class="col-md-6">
-                <label class="form-label">Client Secrets File</label>
-                <input type="text" name="YOUTUBE_CLIENT_SECRETS_FILE" class="form-control" value="{{ settings.YOUTUBE_CLIENT_SECRETS_FILE }}">
-                <div class="form-text">Path to the OAuth client_secrets.json from Google Cloud Console</div>
-            </div>
-            <div class="col-md-6">
-                <label class="form-label">Token File</label>
-                <input type="text" name="YOUTUBE_TOKEN_FILE" class="form-control" value="{{ settings.YOUTUBE_TOKEN_FILE }}">
-                <div class="form-text">Token is saved here after OAuth — usually leave as default</div>
-            </div>
+        <input type="hidden" id="subreddits-hidden" name="SUBREDDITS" value="{{ settings.SUBREDDITS }}">
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">
+          <span class="ay-help-text" style="width:100%;margin-bottom:4px;">Suggestions:</span>
+          {% for s in ['funny','videos','Unexpected','PublicFreakout','nextfuckinglevel','interestingasfuck','oddlysatisfying','BeAmazed'] %}
+          <button type="button" class="ay-btn ay-btn-ghost ay-btn-sm ay-suggestion-pill" data-subreddit="{{ s }}"
+                  style="font-size:0.75rem;padding:2px 8px;">r/{{ s }}</button>
+          {% endfor %}
         </div>
-    </div>
+      </div>
 
-    <!-- Scheduling & Video -->
-    <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-clock"></i> Scheduling & Video</div>
-        <div class="card-body row g-3">
-            <div class="col-md-4">
-                <label class="form-label">Videos Per Day</label>
-                <input type="number" name="VIDEOS_PER_DAY" class="form-control" value="{{ settings.VIDEOS_PER_DAY }}" min="1" max="50">
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Max Duration (seconds)</label>
-                <input type="number" name="MAX_DURATION_SECONDS" class="form-control" value="{{ settings.MAX_DURATION_SECONDS }}" min="1" max="59">
-            </div>
+      <!-- Time Filter -->
+      <div style="margin-bottom:16px;">
+        <label class="ay-label" for="reddit-time-filter">Time Filter</label>
+        <select id="reddit-time-filter" name="TIME_FILTER" class="ay-select">
+          {% for opt in ['day','week','month','year','all'] %}
+          <option value="{{ opt }}" {{ 'selected' if settings.TIME_FILTER == opt }}>{{ opt|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Post Limit -->
+      <div style="margin-bottom:16px;">
+        <label class="ay-label" for="reddit-post-limit">Post Limit</label>
+        <input type="number" id="reddit-post-limit" name="POST_LIMIT" class="ay-input"
+               value="{{ settings.POST_LIMIT }}" min="1" max="100">
+      </div>
+    </div>
+    <div class="ay-card-footer" style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" class="ay-btn ay-btn-ghost ay-btn-sm" data-reset="reddit">
+        <i class="bi bi-arrow-counterclockwise"></i> Reset to Defaults
+      </button>
+      <button type="button" class="ay-btn ay-btn-primary ay-btn-sm" data-save="reddit">
+        <i class="bi bi-check-lg"></i> Save
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- YouTube Tab -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="ay-tab-panel" data-panel="youtube" style="display:none;">
+  <div class="ay-card">
+    <div class="ay-card-header" style="display:flex;align-items:center;justify-content:space-between;">
+      <span><i class="bi bi-youtube"></i> YouTube API</span>
+      <span class="ay-status-dot {{ 'connected' if settings.YOUTUBE_TOKEN_FILE else 'disconnected' }}"
+            data-tooltip="{{ 'Token configured' if settings.YOUTUBE_TOKEN_FILE else 'Not configured' }}"></span>
+    </div>
+    <div class="ay-card-body">
+      <!-- Client Secrets File -->
+      <div style="margin-bottom:16px;">
+        <label class="ay-label" for="yt-secrets">Client Secrets File</label>
+        <input type="text" id="yt-secrets" name="YOUTUBE_CLIENT_SECRETS_FILE" class="ay-input"
+               value="{{ settings.YOUTUBE_CLIENT_SECRETS_FILE }}" placeholder="client_secrets.json">
+        <span class="ay-help-text">Path to the OAuth client_secrets.json from Google Cloud Console</span>
+      </div>
+
+      <!-- Token File -->
+      <div style="margin-bottom:16px;">
+        <label class="ay-label" for="yt-token">Token File</label>
+        <input type="text" id="yt-token" name="YOUTUBE_TOKEN_FILE" class="ay-input"
+               value="{{ settings.YOUTUBE_TOKEN_FILE }}" placeholder="youtube_token.json">
+        <span class="ay-help-text">Token is saved here after OAuth — usually leave as default</span>
+      </div>
+
+      <!-- Test Connection -->
+      <div>
+        <button type="button" class="ay-btn ay-btn-ghost ay-btn-sm" id="test-youtube-btn">
+          <i class="bi bi-plug"></i> Test Connection
+        </button>
+      </div>
+    </div>
+    <div class="ay-card-footer" style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" class="ay-btn ay-btn-ghost ay-btn-sm" data-reset="youtube">
+        <i class="bi bi-arrow-counterclockwise"></i> Reset to Defaults
+      </button>
+      <button type="button" class="ay-btn ay-btn-primary ay-btn-sm" data-save="youtube">
+        <i class="bi bi-check-lg"></i> Save
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Pipeline Tab -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="ay-tab-panel" data-panel="pipeline" style="display:none;">
+  <div class="ay-card">
+    <div class="ay-card-header"><i class="bi bi-funnel"></i> Pipeline Configuration</div>
+    <div class="ay-card-body">
+      <!-- Videos Per Day Slider -->
+      <div style="margin-bottom:24px;">
+        <label class="ay-label">Videos Per Day: <strong id="vpd-value">{{ settings.VIDEOS_PER_DAY }}</strong></label>
+        <div class="ay-range-wrap">
+          <input type="range" class="ay-range" id="vpd-range" name="VIDEOS_PER_DAY"
+                 min="1" max="6" step="1" value="{{ settings.VIDEOS_PER_DAY }}">
+          <div class="ay-range-labels">
+            <span>1 Conservative</span>
+            <span>3 Balanced</span>
+            <span>6 Max Quota</span>
+          </div>
         </div>
-    </div>
+        <div id="quota-visualizer" class="ay-help-text" style="margin-top:8px;"></div>
+      </div>
 
-    <!-- Paths -->
-    <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-folder"></i> Paths</div>
-        <div class="card-body row g-3">
-            <div class="col-md-4">
-                <label class="form-label">Temp Directory</label>
-                <input type="text" name="TEMP_DIR" class="form-control" value="{{ settings.TEMP_DIR }}">
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Database Path</label>
-                <input type="text" name="DB_PATH" class="form-control" value="{{ settings.DB_PATH }}">
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Log File</label>
-                <input type="text" name="LOG_FILE" class="form-control" value="{{ settings.LOG_FILE }}">
-            </div>
+      <!-- Max Duration Slider -->
+      <div style="margin-bottom:16px;">
+        <label class="ay-label">Max Duration: <strong id="dur-value">{{ settings.MAX_DURATION_SECONDS }}</strong>s</label>
+        <div class="ay-range-wrap">
+          <input type="range" class="ay-range" id="dur-range" name="MAX_DURATION_SECONDS"
+                 min="15" max="59" step="1" value="{{ settings.MAX_DURATION_SECONDS }}">
+          <div class="ay-range-labels">
+            <span>15s</span>
+            <span>37s</span>
+            <span>59s</span>
+          </div>
         </div>
+      </div>
     </div>
+    <div class="ay-card-footer" style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" class="ay-btn ay-btn-ghost ay-btn-sm" data-reset="pipeline">
+        <i class="bi bi-arrow-counterclockwise"></i> Reset to Defaults
+      </button>
+      <button type="button" class="ay-btn ay-btn-primary ay-btn-sm" data-save="pipeline">
+        <i class="bi bi-check-lg"></i> Save
+      </button>
+    </div>
+  </div>
+</div>
 
-    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save Settings</button>
-</form>
+<!-- ═══════════════════════════════════════════ -->
+<!-- Advanced Tab -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="ay-tab-panel" data-panel="advanced" style="display:none;">
+  <div class="ay-card">
+    <div class="ay-card-header">
+      <button type="button" class="ay-collapse-toggle" id="advanced-toggle" aria-expanded="false">
+        <i class="bi bi-chevron-right" id="advanced-chevron"></i> Paths &amp; Storage
+      </button>
+    </div>
+    <div class="ay-collapse-content" id="advanced-content" style="display:none;">
+      <div class="ay-card-body">
+        <!-- Temp Directory -->
+        <div style="margin-bottom:16px;">
+          <label class="ay-label" for="adv-temp-dir">Temp Directory</label>
+          <input type="text" id="adv-temp-dir" name="TEMP_DIR" class="ay-input"
+                 value="{{ settings.TEMP_DIR }}" placeholder="temp">
+        </div>
+
+        <!-- Database Path -->
+        <div style="margin-bottom:16px;">
+          <label class="ay-label" for="adv-db-path">Database Path</label>
+          <input type="text" id="adv-db-path" name="DB_PATH" class="ay-input"
+                 value="{{ settings.DB_PATH }}" placeholder="processed_posts.db">
+        </div>
+
+        <!-- Log File -->
+        <div style="margin-bottom:16px;">
+          <label class="ay-label" for="adv-log-file">Log File</label>
+          <input type="text" id="adv-log-file" name="LOG_FILE" class="ay-input"
+                 value="{{ settings.LOG_FILE }}" placeholder="auto_youtuber.log">
+        </div>
+      </div>
+      <div class="ay-card-footer" style="display:flex;gap:8px;justify-content:flex-end;">
+        <button type="button" class="ay-btn ay-btn-ghost ay-btn-sm" data-reset="advanced">
+          <i class="bi bi-arrow-counterclockwise"></i> Reset to Defaults
+        </button>
+        <button type="button" class="ay-btn ay-btn-primary ay-btn-sm" data-save="advanced">
+          <i class="bi bi-check-lg"></i> Save
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+  'use strict';
+
+  // ─── Unsaved Changes Tracking ───────────────────────────────
+  let hasUnsavedChanges = false;
+
+  function markDirty() {
+    hasUnsavedChanges = true;
+  }
+
+  function markClean() {
+    hasUnsavedChanges = false;
+  }
+
+  window.addEventListener('beforeunload', function(e) {
+    if (hasUnsavedChanges) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
+  // Attach input listeners to all form inputs
+  document.querySelectorAll('.ay-input, .ay-select, .ay-range, .ay-tag-input').forEach(function(el) {
+    el.addEventListener('input', markDirty);
+    el.addEventListener('change', markDirty);
+  });
+
+  // ─── Tab Switching ──────────────────────────────────────────
+  var tabs = document.querySelectorAll('.ay-tab');
+  var panels = document.querySelectorAll('.ay-tab-panel');
+
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      var target = this.getAttribute('data-tab');
+
+      tabs.forEach(function(t) { t.classList.remove('active'); });
+      this.classList.add('active');
+
+      panels.forEach(function(p) {
+        if (p.getAttribute('data-panel') === target) {
+          p.style.display = '';
+          p.classList.add('active');
+        } else {
+          p.style.display = 'none';
+          p.classList.remove('active');
+        }
+      });
+    }.bind(tab));
+  });
+
+  // ─── Advanced Collapse Toggle ───────────────────────────────
+  var advToggle = document.getElementById('advanced-toggle');
+  var advContent = document.getElementById('advanced-content');
+  var advChevron = document.getElementById('advanced-chevron');
+
+  advToggle.addEventListener('click', function() {
+    var expanded = advToggle.getAttribute('aria-expanded') === 'true';
+    advToggle.setAttribute('aria-expanded', String(!expanded));
+    advContent.style.display = expanded ? 'none' : '';
+    advChevron.className = expanded ? 'bi bi-chevron-right' : 'bi bi-chevron-down';
+  });
+
+  // ─── Subreddit Tag Chips ────────────────────────────────────
+  var tagsWrap = document.getElementById('subreddit-tags');
+  var tagInput = document.getElementById('subreddit-input');
+  var hiddenInput = document.getElementById('subreddits-hidden');
+
+  function syncHiddenInput() {
+    var tags = tagsWrap.querySelectorAll('.ay-tag');
+    var values = [];
+    tags.forEach(function(t) { values.push(t.getAttribute('data-value')); });
+    hiddenInput.value = values.join(',');
+    markDirty();
+  }
+
+  function addTag(value) {
+    value = value.trim().replace(/^r\//, '');
+    if (!value) return;
+
+    // Check for duplicates
+    var existing = tagsWrap.querySelectorAll('.ay-tag');
+    for (var i = 0; i < existing.length; i++) {
+      if (existing[i].getAttribute('data-value').toLowerCase() === value.toLowerCase()) return;
+    }
+
+    var tag = document.createElement('span');
+    tag.className = 'ay-tag';
+    tag.setAttribute('data-value', value);
+    tag.textContent = value;
+
+    var removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'ay-tag-remove';
+    removeBtn.setAttribute('aria-label', 'Remove');
+    removeBtn.innerHTML = '&times;';
+    removeBtn.addEventListener('click', function() {
+      tag.remove();
+      syncHiddenInput();
+    });
+
+    tag.appendChild(removeBtn);
+    tagsWrap.insertBefore(tag, tagInput);
+    syncHiddenInput();
+  }
+
+  function removeTag(btn) {
+    btn.closest('.ay-tag').remove();
+    syncHiddenInput();
+  }
+
+  // Existing remove buttons
+  tagsWrap.querySelectorAll('.ay-tag-remove').forEach(function(btn) {
+    btn.addEventListener('click', function() { removeTag(this); });
+  });
+
+  // Tag input key handler
+  tagInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      var val = tagInput.value.replace(/,/g, '');
+      addTag(val);
+      tagInput.value = '';
+    }
+    // Backspace on empty input removes last tag
+    if (e.key === 'Backspace' && !tagInput.value) {
+      var allTags = tagsWrap.querySelectorAll('.ay-tag');
+      if (allTags.length > 0) {
+        allTags[allTags.length - 1].remove();
+        syncHiddenInput();
+      }
+    }
+  });
+
+  // Also handle paste with commas
+  tagInput.addEventListener('input', function() {
+    if (tagInput.value.indexOf(',') !== -1) {
+      var parts = tagInput.value.split(',');
+      parts.forEach(function(p) { addTag(p); });
+      tagInput.value = '';
+    }
+  });
+
+  // Suggestion pills
+  document.querySelectorAll('.ay-suggestion-pill').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      addTag(this.getAttribute('data-subreddit'));
+    });
+  });
+
+  // ─── Sliders ────────────────────────────────────────────────
+  var vpdRange = document.getElementById('vpd-range');
+  var vpdValue = document.getElementById('vpd-value');
+  var quotaViz = document.getElementById('quota-visualizer');
+
+  function updateQuotaViz() {
+    var v = parseInt(vpdRange.value, 10);
+    vpdValue.textContent = v;
+    var units = v * 1600;
+    quotaViz.textContent = 'At ' + v + ' video' + (v !== 1 ? 's' : '') +
+      '/day, you\u2019ll use ~' + units.toLocaleString() + ' of 10,000 daily API units';
+  }
+  vpdRange.addEventListener('input', updateQuotaViz);
+  updateQuotaViz();
+
+  var durRange = document.getElementById('dur-range');
+  var durValue = document.getElementById('dur-value');
+  durRange.addEventListener('input', function() {
+    durValue.textContent = durRange.value;
+  });
+
+  // ─── Section Field Maps ─────────────────────────────────────
+  var sectionFields = {
+    reddit: [
+      { name: 'REDDIT_CLIENT_ID',     el: function() { return document.getElementById('reddit-client-id'); } },
+      { name: 'REDDIT_CLIENT_SECRET', el: function() { return document.getElementById('reddit-client-secret'); } },
+      { name: 'REDDIT_USER_AGENT',    el: function() { return document.getElementById('reddit-user-agent'); } },
+      { name: 'SUBREDDITS',           el: function() { return document.getElementById('subreddits-hidden'); } },
+      { name: 'TIME_FILTER',          el: function() { return document.getElementById('reddit-time-filter'); } },
+      { name: 'POST_LIMIT',           el: function() { return document.getElementById('reddit-post-limit'); } }
+    ],
+    youtube: [
+      { name: 'YOUTUBE_CLIENT_SECRETS_FILE', el: function() { return document.getElementById('yt-secrets'); } },
+      { name: 'YOUTUBE_TOKEN_FILE',          el: function() { return document.getElementById('yt-token'); } }
+    ],
+    pipeline: [
+      { name: 'VIDEOS_PER_DAY',      el: function() { return document.getElementById('vpd-range'); } },
+      { name: 'MAX_DURATION_SECONDS', el: function() { return document.getElementById('dur-range'); } }
+    ],
+    advanced: [
+      { name: 'TEMP_DIR',  el: function() { return document.getElementById('adv-temp-dir'); } },
+      { name: 'DB_PATH',   el: function() { return document.getElementById('adv-db-path'); } },
+      { name: 'LOG_FILE',  el: function() { return document.getElementById('adv-log-file'); } }
+    ]
+  };
+
+  // ─── Per-Section Save ───────────────────────────────────────
+  document.querySelectorAll('[data-save]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var section = btn.getAttribute('data-save');
+      var fields = sectionFields[section];
+      var formData = new FormData();
+
+      fields.forEach(function(f) {
+        formData.append(f.name, f.el().value);
+      });
+
+      var origHTML = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...';
+
+      fetch('/settings', {
+        method: 'POST',
+        body: formData
+      })
+      .then(function(res) {
+        if (!res.ok) throw new Error('Save failed');
+        btn.innerHTML = '<i class="bi bi-check-circle"></i> Saved!';
+        btn.classList.remove('ay-btn-primary');
+        btn.classList.add('ay-btn-success');
+        AY.toast.show('Settings saved successfully', 'success');
+        markClean();
+
+        setTimeout(function() {
+          btn.innerHTML = origHTML;
+          btn.classList.remove('ay-btn-success');
+          btn.classList.add('ay-btn-primary');
+          btn.disabled = false;
+        }, 1500);
+      })
+      .catch(function(err) {
+        btn.innerHTML = origHTML;
+        btn.disabled = false;
+        AY.toast.show('Failed to save settings: ' + err.message, 'error');
+      });
+    });
+  });
+
+  // ─── Reset to Defaults ─────────────────────────────────────
+  var defaults = {
+    reddit: {
+      REDDIT_CLIENT_ID: '',
+      REDDIT_CLIENT_SECRET: '',
+      REDDIT_USER_AGENT: '',
+      SUBREDDITS: 'funny,videos,Unexpected',
+      TIME_FILTER: 'day',
+      POST_LIMIT: '20'
+    },
+    youtube: {
+      YOUTUBE_CLIENT_SECRETS_FILE: 'client_secrets.json',
+      YOUTUBE_TOKEN_FILE: 'youtube_token.json'
+    },
+    pipeline: {
+      VIDEOS_PER_DAY: '6',
+      MAX_DURATION_SECONDS: '59'
+    },
+    advanced: {
+      TEMP_DIR: 'temp',
+      DB_PATH: 'processed_posts.db',
+      LOG_FILE: 'auto_youtuber.log'
+    }
+  };
+
+  document.querySelectorAll('[data-reset]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var section = btn.getAttribute('data-reset');
+
+      AY.confirm.show(
+        'Reset ' + section.charAt(0).toUpperCase() + section.slice(1) + ' Settings',
+        'Are you sure you want to reset this section to default values? This won\u2019t be saved until you click Save.',
+        function() {
+          var sectionDefaults = defaults[section];
+          var fields = sectionFields[section];
+
+          fields.forEach(function(f) {
+            var el = f.el();
+            var def = sectionDefaults[f.name];
+            if (def !== undefined) {
+              el.value = def;
+              // Trigger change for sliders
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          });
+
+          // Special handling for subreddit tags on reddit reset
+          if (section === 'reddit') {
+            rebuildSubredditTags(sectionDefaults.SUBREDDITS);
+          }
+
+          markDirty();
+          AY.toast.show(section.charAt(0).toUpperCase() + section.slice(1) + ' reset to defaults', 'info');
+        }
+      );
+    });
+  });
+
+  function rebuildSubredditTags(csv) {
+    // Remove all existing tags
+    tagsWrap.querySelectorAll('.ay-tag').forEach(function(t) { t.remove(); });
+    // Add new ones
+    csv.split(',').forEach(function(s) { addTag(s); });
+  }
+
+  // ─── Test Connection Buttons ────────────────────────────────
+  document.getElementById('test-reddit-btn').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Testing...';
+
+    fetch('/api/test-reddit', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.ok || data.success) {
+          AY.toast.show('Reddit connection successful!', 'success');
+        } else {
+          AY.toast.show('Reddit connection failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      })
+      .catch(function(err) {
+        AY.toast.show('Reddit test failed: ' + err.message, 'error');
+      })
+      .finally(function() {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plug"></i> Test Connection';
+      });
+  });
+
+  document.getElementById('test-youtube-btn').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Testing...';
+
+    fetch('/api/test-youtube', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.ok || data.success) {
+          AY.toast.show('YouTube connection successful!', 'success');
+        } else {
+          AY.toast.show('YouTube connection failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      })
+      .catch(function(err) {
+        AY.toast.show('YouTube test failed: ' + err.message, 'error');
+      })
+      .finally(function() {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plug"></i> Test Connection';
+      });
+  });
+
+  // ─── Export Config ──────────────────────────────────────────
+  document.getElementById('export-btn').addEventListener('click', function() {
+    var config = {};
+    Object.keys(sectionFields).forEach(function(section) {
+      sectionFields[section].forEach(function(f) {
+        config[f.name] = f.el().value;
+      });
+    });
+
+    var blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'auto_youtuber_settings.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    AY.toast.show('Settings exported', 'success');
+  });
+
+  // ─── Import Config ──────────────────────────────────────────
+  document.getElementById('import-file').addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        var config = JSON.parse(evt.target.result);
+
+        Object.keys(sectionFields).forEach(function(section) {
+          sectionFields[section].forEach(function(f) {
+            if (config[f.name] !== undefined) {
+              var el = f.el();
+              el.value = config[f.name];
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          });
+        });
+
+        // Rebuild subreddit tags if SUBREDDITS was imported
+        if (config.SUBREDDITS) {
+          rebuildSubredditTags(config.SUBREDDITS);
+        }
+
+        markDirty();
+        AY.toast.show('Settings imported — remember to save each section', 'success');
+      } catch (err) {
+        AY.toast.show('Invalid settings file: ' + err.message, 'error');
+      }
+    };
+    reader.readAsText(file);
+    // Reset file input so same file can be re-imported
+    e.target.value = '';
+  });
+
+})();
+</script>
 {% endblock %}

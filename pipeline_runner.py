@@ -162,6 +162,38 @@ class PipelineRunner:
         """Disarm to prevent processing."""
         self.armed = False
 
+    def reorder_queue(self, uid_order: list[str]):
+        """Reorder queued items according to the given UID list."""
+        uid_map = {item.uid: item for item in self.queue}
+        reordered = []
+        seen = set()
+
+        # First, place items in the requested order
+        for uid in uid_order:
+            if uid in uid_map and uid not in seen:
+                reordered.append(uid_map[uid])
+                seen.add(uid)
+
+        # Then append any items not in the order list (done/failed/active items)
+        for item in self.queue:
+            if item.uid not in seen:
+                reordered.append(item)
+
+        self.queue = reordered
+        self._persist_queue()
+
+    def retry_item(self, uid: str) -> bool:
+        """Re-queue a failed item so it can be processed again."""
+        for item in self.queue:
+            if item.uid == uid and item.status in ("failed", "skipped"):
+                item.status = "queued"
+                item.error = None
+                item.progress = ""
+                item.youtube_id = None
+                self._persist_queue()
+                return True
+        return False
+
     def start_processing(self) -> bool:
         """Begin processing the armed queue. Returns False if already running or not armed."""
         if self.is_running():
