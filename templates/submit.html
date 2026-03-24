@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Submit — Auto Youtuber{% endblock %}
+
+{% block content %}
+<h4 class="mb-4"><i class="bi bi-send"></i> Submit a Reddit Video</h4>
+
+<div class="card">
+    <div class="card-body">
+        <p class="text-muted">Paste a Reddit video post URL. The video will be downloaded, reformatted to 9:16 Shorts, and uploaded to your YouTube channel.</p>
+        <form method="POST" action="/submit">
+            <div class="mb-3">
+                <label class="form-label">Reddit Post URL</label>
+                <input type="text" name="url" class="form-control form-control-lg" placeholder="https://www.reddit.com/r/funny/comments/..." required>
+                <div class="form-text">Supports full Reddit URLs, share links, and redd.it short links</div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg" {{ 'disabled' if pipeline_running }}>
+                <i class="bi bi-play-fill"></i> Process & Upload
+            </button>
+            {% if pipeline_running %}
+            <p class="text-warning mt-2 mb-0"><i class="bi bi-exclamation-triangle"></i> Pipeline is currently running. Wait for it to finish.</p>
+            {% endif %}
+        </form>
+    </div>
+</div>
+{% endblock %}

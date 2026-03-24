@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Settings — Auto Youtuber{% endblock %}
+
+{% block content %}
+<h4 class="mb-4"><i class="bi bi-gear"></i> Settings</h4>
+
+<form method="POST" action="/settings">
+    <!-- Reddit API -->
+    <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-reddit"></i> Reddit API</div>
+        <div class="card-body row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Client ID</label>
+                <input type="text" name="REDDIT_CLIENT_ID" class="form-control" value="{{ settings.REDDIT_CLIENT_ID }}" placeholder="From reddit.com/prefs/apps">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Client Secret</label>
+                <input type="password" name="REDDIT_CLIENT_SECRET" class="form-control" value="{{ settings.REDDIT_CLIENT_SECRET }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">User Agent</label>
+                <input type="text" name="REDDIT_USER_AGENT" class="form-control" value="{{ settings.REDDIT_USER_AGENT }}">
+            </div>
+        </div>
+    </div>
+
+    <!-- Scraping -->
+    <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-search"></i> Scraping</div>
+        <div class="card-body row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Subreddits (comma-separated)</label>
+                <input type="text" name="SUBREDDITS" class="form-control" value="{{ settings.SUBREDDITS }}" placeholder="funny,videos,Unexpected">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Time Filter</label>
+                <select name="TIME_FILTER" class="form-select">
+                    {% for opt in ['day', 'week', 'month', 'year', 'all'] %}
+                    <option value="{{ opt }}" {{ 'selected' if settings.TIME_FILTER == opt }}>{{ opt }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Post Limit</label>
+                <input type="number" name="POST_LIMIT" class="form-control" value="{{ settings.POST_LIMIT }}" min="1" max="100">
+            </div>
+        </div>
+    </div>
+
+    <!-- YouTube -->
+    <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-youtube"></i> YouTube</div>
+        <div class="card-body row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Client Secrets File</label>
+                <input type="text" name="YOUTUBE_CLIENT_SECRETS_FILE" class="form-control" value="{{ settings.YOUTUBE_CLIENT_SECRETS_FILE }}">
+                <div class="form-text">Path to the OAuth client_secrets.json from Google Cloud Console</div>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Token File</label>
+                <input type="text" name="YOUTUBE_TOKEN_FILE" class="form-control" value="{{ settings.YOUTUBE_TOKEN_FILE }}">
+                <div class="form-text">Token is saved here after OAuth — usually leave as default</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scheduling & Video -->
+    <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-clock"></i> Scheduling & Video</div>
+        <div class="card-body row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Videos Per Day</label>
+                <input type="number" name="VIDEOS_PER_DAY" class="form-control" value="{{ settings.VIDEOS_PER_DAY }}" min="1" max="50">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Max Duration (seconds)</label>
+                <input type="number" name="MAX_DURATION_SECONDS" class="form-control" value="{{ settings.MAX_DURATION_SECONDS }}" min="1" max="59">
+            </div>
+        </div>
+    </div>
+
+    <!-- Paths -->
+    <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-folder"></i> Paths</div>
+        <div class="card-body row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Temp Directory</label>
+                <input type="text" name="TEMP_DIR" class="form-control" value="{{ settings.TEMP_DIR }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Database Path</label>
+                <input type="text" name="DB_PATH" class="form-control" value="{{ settings.DB_PATH }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Log File</label>
+                <input type="text" name="LOG_FILE" class="form-control" value="{{ settings.LOG_FILE }}">
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save Settings</button>
+</form>
+{% endblock %}

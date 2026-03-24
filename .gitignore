@@ -1,0 +1,9 @@
+.env
+client_secrets.json
+youtube_token.json
+processed_posts.db
+auto_youtuber.db
+auto_youtuber.log*
+temp/
+__pycache__/
+*.pyc

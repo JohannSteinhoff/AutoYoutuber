@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Auto Youtuber{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+    <!-- Pipeline Status -->
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-activity"></i> Pipeline</h5>
+                <p class="mb-1">Status: <span id="pipeline-state" class="badge status-badge bg-secondary">{{ status.state }}</span></p>
+                <p class="mb-1 text-muted small" id="pipeline-message">{{ status.message }}</p>
+                <p class="mb-0 text-muted small">Last run: <span id="last-run">{{ status.last_run or 'Never' }}</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scheduler Status -->
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-clock"></i> Scheduler</h5>
+                <p class="mb-1">Status:
+                    <span id="sched-state" class="badge status-badge {{ 'bg-success' if scheduler_running else 'bg-secondary' }}">
+                        {{ 'Running' if scheduler_running else 'Stopped' }}
+                    </span>
+                </p>
+                <p class="mb-1 text-muted small">Interval: every {{ interval_hours }}h ({{ videos_per_day }} videos/day)</p>
+                <p class="mb-2 text-muted small">Next run: <span id="next-run">{{ next_run or 'N/A' }}</span></p>
+                <div class="d-flex gap-2">
+                    {% if scheduler_running %}
+                    <form method="POST" action="/scheduler/stop">
+                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-stop-circle"></i> Stop</button>
+                    </form>
+                    {% else %}
+                    <form method="POST" action="/scheduler/start">
+                        <button class="btn btn-sm btn-outline-success"><i class="bi bi-play-circle"></i> Start</button>
+                    </form>
+                    {% endif %}
+                    <form method="POST" action="/scheduler/run-now">
+                        <button class="btn btn-sm btn-outline-primary" {{ 'disabled' if pipeline_running }}><i class="bi bi-lightning"></i> Run Now</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- YouTube Account -->
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-youtube"></i> YouTube</h5>
+                {% if youtube_connected %}
+                <p class="mb-1"><span class="badge bg-success status-badge">Connected</span></p>
+                <p class="text-muted small mb-2">Token saved and valid</p>
+                {% else %}
+                <p class="mb-1"><span class="badge bg-warning status-badge">Not Connected</span></p>
+                <p class="text-muted small mb-2">OAuth required to upload videos</p>
+                {% endif %}
+                <a href="/oauth/start" class="btn btn-sm btn-outline-danger">
+                    <i class="bi bi-box-arrow-in-right"></i> {{ 'Reconnect' if youtube_connected else 'Connect YouTube' }}
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Submit -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-send"></i> Quick Submit</h5>
+        <form method="POST" action="/submit" class="d-flex gap-2">
+            <input type="text" name="url" class="form-control" placeholder="Paste a Reddit video URL..." required>
+            <button type="submit" class="btn btn-primary text-nowrap" id="submit-btn" {{ 'disabled' if pipeline_running }}>
+                <i class="bi bi-play-fill"></i> Process
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="card">
+    <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-clock-history"></i> Recent Activity</h5>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="history-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Title</th>
+                        <th>Subreddit</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in status.history | reverse %}
+                    <tr>
+                        <td class="text-muted small text-nowrap">{{ r.timestamp }}</td>
+                        <td>{{ r.post_title[:60] }}</td>
+                        <td>r/{{ r.subreddit }}</td>
+                        <td>
+                            {% if r.success %}
+                            <a href="https://www.youtube.com/shorts/{{ r.video_id }}" target="_blank" class="badge bg-success text-decoration-none">
+                                Uploaded <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
+                            {% else %}
+                            <span class="badge bg-danger">{{ r.error }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-muted text-center">No activity yet</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const stateColors = {
+    idle: 'bg-secondary', scraping: 'bg-info', downloading: 'bg-primary',
+    processing: 'bg-warning', uploading: 'bg-success', error: 'bg-danger'
+};
+
+function poll() {
+    fetch('/api/status').then(r => r.json()).then(data => {
+        const el = document.getElementById('pipeline-state');
+        el.textContent = data.state;
+        el.className = 'badge status-badge ' + (stateColors[data.state] || 'bg-secondary');
+        document.getElementById('pipeline-message').textContent = data.message || '';
+        document.getElementById('last-run').textContent = data.last_run || 'Never';
+
+        const btn = document.getElementById('submit-btn');
+        btn.disabled = data.state !== 'idle';
+    });
+}
+setInterval(poll, 3000);
+</script>
+{% endblock %}
