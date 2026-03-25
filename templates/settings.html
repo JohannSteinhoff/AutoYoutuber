@@ -1,103 +1,230 @@
 {% extends "base.html" %}
 {% block title %}Settings — Auto Youtuber{% endblock %}
 
+{% block extra_head %}
+<style>
+    .settings-tabs .nav-link {
+        color: var(--ay-muted);
+        font-size: 0.88rem;
+        font-weight: 500;
+        padding: 0.6rem 1rem;
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        transition: all var(--ay-transition);
+    }
+    .settings-tabs .nav-link:hover {
+        color: #e0e4f0;
+        border-bottom-color: rgba(255, 255, 255, 0.1);
+    }
+    .settings-tabs .nav-link.active {
+        color: var(--ay-accent);
+        background: transparent;
+        border-bottom-color: var(--ay-accent);
+        font-weight: 600;
+    }
+    .settings-card {
+        background: var(--ay-surface);
+        backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+        -webkit-backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+        border: 1px solid var(--ay-glass-border);
+        border-radius: var(--ay-radius);
+        padding: 1.25rem;
+        box-shadow: var(--ay-shadow), inset 0 1px 0 rgba(255,255,255,0.04);
+        position: relative;
+        overflow: hidden;
+    }
+    .settings-card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: var(--ay-glass-shine);
+        pointer-events: none;
+        border-radius: inherit;
+    }
+    .settings-card .form-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #c0c6d6;
+        margin-bottom: 0.3rem;
+    }
+    .settings-card .form-control,
+    .settings-card .form-select {
+        background: var(--ay-surface-alt);
+        border-color: rgba(255, 255, 255, 0.08);
+        font-size: 0.88rem;
+    }
+    .settings-card .form-control:focus,
+    .settings-card .form-select:focus {
+        border-color: var(--ay-accent);
+        box-shadow: 0 0 0 2px var(--ay-accent-soft);
+    }
+    .settings-card .form-text {
+        font-size: 0.75rem;
+        color: var(--ay-muted);
+    }
+    .section-desc {
+        font-size: 0.82rem;
+        color: var(--ay-muted);
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<h4 class="mb-4"><i class="bi bi-gear"></i> Settings</h4>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="mb-0"><i class="bi bi-gear"></i> Settings</h5>
+</div>
 
 <form method="POST" action="/settings">
-    <!-- Reddit API -->
-    <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-reddit"></i> Reddit API</div>
-        <div class="card-body row g-3">
-            <div class="col-md-6">
-                <label class="form-label">Client ID</label>
-                <input type="text" name="REDDIT_CLIENT_ID" class="form-control" value="{{ settings.REDDIT_CLIENT_ID }}" placeholder="From reddit.com/prefs/apps">
+    <!-- Tabs -->
+    <ul class="nav settings-tabs mb-4" role="tablist">
+        <li class="nav-item">
+            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-reddit" type="button">
+                <i class="bi bi-reddit"></i> Reddit
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-youtube" type="button">
+                <i class="bi bi-youtube"></i> YouTube
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-schedule" type="button">
+                <i class="bi bi-clock"></i> Scheduling
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-system" type="button">
+                <i class="bi bi-hdd"></i> System
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tab content -->
+    <div class="tab-content">
+        <!-- Reddit Tab -->
+        <div class="tab-pane fade show active" id="tab-reddit">
+            <div class="settings-card">
+                <div class="section-desc">Configure your Reddit API credentials for automatic video scraping. Get credentials from <a href="https://www.reddit.com/prefs/apps" target="_blank">reddit.com/prefs/apps</a>.</div>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label class="form-label">Client ID</label>
+                        <input type="text" name="REDDIT_CLIENT_ID" class="form-control" value="{{ settings.REDDIT_CLIENT_ID }}" placeholder="From reddit.com/prefs/apps">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Client Secret</label>
+                        <input type="password" name="REDDIT_CLIENT_SECRET" class="form-control" value="{{ settings.REDDIT_CLIENT_SECRET }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">User Agent</label>
+                        <input type="text" name="REDDIT_USER_AGENT" class="form-control" value="{{ settings.REDDIT_USER_AGENT }}">
+                        <div class="form-text">e.g., AutoYoutuber/1.0 by u/yourname</div>
+                    </div>
+                </div>
+
+                <h6 class="fw-semibold mb-3" style="font-size: 0.88rem;"><i class="bi bi-search"></i> Scraping</h6>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Subreddits</label>
+                        <input type="text" name="SUBREDDITS" class="form-control" value="{{ settings.SUBREDDITS }}" placeholder="funny,videos,Unexpected">
+                        <div class="form-text">Comma-separated list of subreddits to scrape</div>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Time Filter</label>
+                        <select name="TIME_FILTER" class="form-select">
+                            {% for opt in ['day', 'week', 'month', 'year', 'all'] %}
+                            <option value="{{ opt }}" {{ 'selected' if settings.TIME_FILTER == opt }}>{{ opt | capitalize }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Post Limit</label>
+                        <input type="number" name="POST_LIMIT" class="form-control" value="{{ settings.POST_LIMIT }}" min="1" max="100">
+                        <div class="form-text">Max posts to scan per subreddit</div>
+                    </div>
+                </div>
             </div>
-            <div class="col-md-6">
-                <label class="form-label">Client Secret</label>
-                <input type="password" name="REDDIT_CLIENT_SECRET" class="form-control" value="{{ settings.REDDIT_CLIENT_SECRET }}">
+        </div>
+
+        <!-- YouTube Tab -->
+        <div class="tab-pane fade" id="tab-youtube">
+            <div class="settings-card">
+                <div class="section-desc">
+                    YouTube OAuth connection settings. Download client_secrets.json from <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a>.
+                    <span class="ms-2">
+                        Status:
+                        {% if youtube_connected %}
+                        <span class="badge bg-success">Connected</span>
+                        {% else %}
+                        <span class="badge bg-warning">Not Connected</span>
+                        <a href="/oauth/start" class="btn btn-sm btn-outline-danger ms-1"><i class="bi bi-box-arrow-in-right"></i> Connect Now</a>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Client Secrets File</label>
+                        <input type="text" name="YOUTUBE_CLIENT_SECRETS_FILE" class="form-control" value="{{ settings.YOUTUBE_CLIENT_SECRETS_FILE }}">
+                        <div class="form-text">Path to client_secrets.json from Google Cloud Console</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Token File</label>
+                        <input type="text" name="YOUTUBE_TOKEN_FILE" class="form-control" value="{{ settings.YOUTUBE_TOKEN_FILE }}">
+                        <div class="form-text">Token is saved here after OAuth. Usually leave as default.</div>
+                    </div>
+                </div>
             </div>
-            <div class="col-md-6">
-                <label class="form-label">User Agent</label>
-                <input type="text" name="REDDIT_USER_AGENT" class="form-control" value="{{ settings.REDDIT_USER_AGENT }}">
+        </div>
+
+        <!-- Scheduling Tab -->
+        <div class="tab-pane fade" id="tab-schedule">
+            <div class="settings-card">
+                <div class="section-desc">Configure how many videos to upload per day and video duration limits.</div>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Videos Per Day</label>
+                        <input type="number" name="VIDEOS_PER_DAY" class="form-control" value="{{ settings.VIDEOS_PER_DAY }}" min="1" max="50">
+                        <div class="form-text">YouTube quota allows ~6 uploads/day (1,600 units each)</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Max Duration (seconds)</label>
+                        <input type="number" name="MAX_DURATION_SECONDS" class="form-control" value="{{ settings.MAX_DURATION_SECONDS }}" min="1" max="59">
+                        <div class="form-text">YouTube Shorts must be under 60 seconds</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Tab -->
+        <div class="tab-pane fade" id="tab-system">
+            <div class="settings-card">
+                <div class="section-desc">File system paths for temporary files, database, and logs.</div>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Temp Directory</label>
+                        <input type="text" name="TEMP_DIR" class="form-control" value="{{ settings.TEMP_DIR }}">
+                        <div class="form-text">Downloaded and processed videos are stored here temporarily</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Database Path</label>
+                        <input type="text" name="DB_PATH" class="form-control" value="{{ settings.DB_PATH }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Log File</label>
+                        <input type="text" name="LOG_FILE" class="form-control" value="{{ settings.LOG_FILE }}">
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Scraping -->
-    <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-search"></i> Scraping</div>
-        <div class="card-body row g-3">
-            <div class="col-md-6">
-                <label class="form-label">Subreddits (comma-separated)</label>
-                <input type="text" name="SUBREDDITS" class="form-control" value="{{ settings.SUBREDDITS }}" placeholder="funny,videos,Unexpected">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Time Filter</label>
-                <select name="TIME_FILTER" class="form-select">
-                    {% for opt in ['day', 'week', 'month', 'year', 'all'] %}
-                    <option value="{{ opt }}" {{ 'selected' if settings.TIME_FILTER == opt }}>{{ opt }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Post Limit</label>
-                <input type="number" name="POST_LIMIT" class="form-control" value="{{ settings.POST_LIMIT }}" min="1" max="100">
-            </div>
-        </div>
+    <div class="mt-4">
+        <button type="submit" class="btn btn-ay-primary px-4">
+            <i class="bi bi-check-lg"></i> Save Settings
+        </button>
     </div>
-
-    <!-- YouTube -->
-    <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-youtube"></i> YouTube</div>
-        <div class="card-body row g-3">
-            <div class="col-md-6">
-                <label class="form-label">Client Secrets File</label>
-                <input type="text" name="YOUTUBE_CLIENT_SECRETS_FILE" class="form-control" value="{{ settings.YOUTUBE_CLIENT_SECRETS_FILE }}">
-                <div class="form-text">Path to the OAuth client_secrets.json from Google Cloud Console</div>
-            </div>
-            <div class="col-md-6">
-                <label class="form-label">Token File</label>
-                <input type="text" name="YOUTUBE_TOKEN_FILE" class="form-control" value="{{ settings.YOUTUBE_TOKEN_FILE }}">
-                <div class="form-text">Token is saved here after OAuth — usually leave as default</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Scheduling & Video -->
-    <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-clock"></i> Scheduling & Video</div>
-        <div class="card-body row g-3">
-            <div class="col-md-4">
-                <label class="form-label">Videos Per Day</label>
-                <input type="number" name="VIDEOS_PER_DAY" class="form-control" value="{{ settings.VIDEOS_PER_DAY }}" min="1" max="50">
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Max Duration (seconds)</label>
-                <input type="number" name="MAX_DURATION_SECONDS" class="form-control" value="{{ settings.MAX_DURATION_SECONDS }}" min="1" max="59">
-            </div>
-        </div>
-    </div>
-
-    <!-- Paths -->
-    <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-folder"></i> Paths</div>
-        <div class="card-body row g-3">
-            <div class="col-md-4">
-                <label class="form-label">Temp Directory</label>
-                <input type="text" name="TEMP_DIR" class="form-control" value="{{ settings.TEMP_DIR }}">
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Database Path</label>
-                <input type="text" name="DB_PATH" class="form-control" value="{{ settings.DB_PATH }}">
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Log File</label>
-                <input type="text" name="LOG_FILE" class="form-control" value="{{ settings.LOG_FILE }}">
-            </div>
-        </div>
-    </div>
-
-    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save Settings</button>
 </form>
 {% endblock %}

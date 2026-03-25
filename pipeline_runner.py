@@ -144,8 +144,8 @@ class PipelineRunner:
         return True
 
     def clear_queue(self):
-        """Remove all queued (not yet processed) items."""
-        self.queue = [item for item in self.queue if item.status not in ("queued",)]
+        """Remove all items from the queue."""
+        self.queue.clear()
         self.armed = False
         self._persist_queue()
 

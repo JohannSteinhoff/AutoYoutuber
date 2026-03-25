@@ -1,22 +1,127 @@
 {% extends "base.html" %}
 {% block title %}Logs — Auto Youtuber{% endblock %}
 
+{% block extra_head %}
+<style>
+    .log-controls {
+        background: var(--ay-surface);
+        backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+        -webkit-backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+        border: 1px solid var(--ay-glass-border);
+        border-radius: var(--ay-radius) var(--ay-radius) 0 0;
+        padding: 0.6rem 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        box-shadow: var(--ay-shadow), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .log-level-btn {
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 0.25rem 0.6rem;
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: transparent;
+        color: var(--ay-muted);
+        cursor: pointer;
+        transition: all var(--ay-transition);
+    }
+    .log-level-btn:hover { background: rgba(255, 255, 255, 0.05); }
+    .log-level-btn.active-info    { background: var(--ay-info-soft); color: var(--ay-info); border-color: var(--ay-info); }
+    .log-level-btn.active-warning { background: var(--ay-warning-soft); color: var(--ay-warning); border-color: var(--ay-warning); }
+    .log-level-btn.active-error   { background: var(--ay-danger-soft); color: var(--ay-danger); border-color: var(--ay-danger); }
+    .log-level-btn.active-debug   { background: rgba(255,255,255,0.06); color: #aaa; border-color: #666; }
+
+    .log-search {
+        background: var(--ay-surface-alt);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #e0e4f0;
+        font-size: 0.82rem;
+        padding: 0.3rem 0.6rem;
+        border-radius: 6px;
+        width: 200px;
+    }
+    .log-search:focus {
+        outline: none;
+        border-color: var(--ay-accent);
+        box-shadow: 0 0 0 2px var(--ay-accent-soft);
+    }
+
+    .log-viewer {
+        border-radius: 0 0 var(--ay-radius) var(--ay-radius);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-top: none;
+    }
+
+    /* Syntax highlighting */
+    .log-line { white-space: pre-wrap; word-break: break-all; }
+    .log-ts    { color: #5c6b8a; }
+    .log-info  { color: var(--ay-info); font-weight: 600; }
+    .log-warn  { color: var(--ay-warning); font-weight: 600; }
+    .log-err   { color: var(--ay-danger); font-weight: 600; }
+    .log-debug { color: #777; font-weight: 600; }
+    .log-name  { color: #7c8cc4; }
+    .log-msg   { color: #c8cdd9; }
+    .log-match { background: rgba(255, 193, 7, 0.25); border-radius: 2px; padding: 0 2px; }
+
+    .log-line-warn { border-left: 2px solid var(--ay-warning); padding-left: 0.5rem; }
+    .log-line-err  { border-left: 2px solid var(--ay-danger); padding-left: 0.5rem; background: rgba(239, 83, 80, 0.04); }
+
+    .line-count {
+        font-size: 0.72rem;
+        color: var(--ay-muted);
+        font-weight: 600;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="bi bi-terminal"></i> Live Logs</h4>
+    <h5 class="mb-0"><i class="bi bi-terminal"></i> Live Logs</h5>
+</div>
+
+<!-- Controls -->
+<div class="log-controls">
     <div class="d-flex gap-2 align-items-center">
-        <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" id="auto-scroll" checked>
-            <label class="form-check-label" for="auto-scroll">Auto-scroll</label>
+        <!-- Level filters -->
+        <span class="text-ay-muted" style="font-size: 0.75rem; font-weight: 600;">Filter:</span>
+        <button class="log-level-btn active-info" data-level="INFO" onclick="toggleLevel(this)">INFO</button>
+        <button class="log-level-btn active-warning" data-level="WARNING" onclick="toggleLevel(this)">WARN</button>
+        <button class="log-level-btn active-error" data-level="ERROR" onclick="toggleLevel(this)">ERROR</button>
+        <button class="log-level-btn active-debug" data-level="DEBUG" onclick="toggleLevel(this)">DEBUG</button>
+
+        <span class="text-muted mx-1">|</span>
+
+        <!-- Search -->
+        <input type="text" class="log-search" id="log-search" placeholder="Search logs...">
+    </div>
+
+    <div class="d-flex gap-2 align-items-center">
+        <span class="line-count" id="line-count">{{ log_lines | length }} lines</span>
+
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="auto-scroll" checked style="cursor: pointer;">
+            <label class="form-check-label" for="auto-scroll" style="font-size: 0.78rem; cursor: pointer;">Auto-scroll</label>
         </div>
-        <button class="btn btn-sm btn-outline-primary" id="copy-btn"><i class="bi bi-clipboard"></i> Copy All</button>
-        <button class="btn btn-sm btn-outline-secondary" id="clear-btn"><i class="bi bi-trash"></i> Clear</button>
+
+        <button class="btn btn-sm btn-outline-primary py-0 px-2" id="copy-btn" style="font-size: 0.78rem;">
+            <i class="bi bi-clipboard"></i> Copy
+        </button>
+        <button class="btn btn-sm btn-outline-secondary py-0 px-2" id="download-btn" style="font-size: 0.78rem;">
+            <i class="bi bi-download"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-secondary py-0 px-2" id="clear-btn" style="font-size: 0.78rem;">
+            <i class="bi bi-trash3"></i> Clear
+        </button>
     </div>
 </div>
 
-<div class="log-area" id="log-area">
+<!-- Log viewer -->
+<div class="log-area log-viewer" id="log-area">
     {% for line in log_lines %}
-    <p>{{ line }}</p>
+    <p class="log-line">{{ line }}</p>
     {% endfor %}
 </div>
 {% endblock %}
@@ -25,38 +130,121 @@
 <script>
 const logArea = document.getElementById('log-area');
 const autoScroll = document.getElementById('auto-scroll');
+const searchInput = document.getElementById('log-search');
 let lastCount = {{ log_lines | length }};
+let rawLines = [];
+let activeLevels = new Set(['INFO', 'WARNING', 'ERROR', 'DEBUG']);
+
+function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function highlightLine(line) {
+    const escaped = esc(line);
+    // Parse: "2026-03-23 14:25:33 [INFO] app: Message here"
+    const match = escaped.match(/^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s\[(\w+)\]\s([^:]+):\s(.*)$/);
+    if (match) {
+        const [, ts, level, name, msg] = match;
+        const levelClass = level === 'WARNING' ? 'log-warn' : level === 'ERROR' ? 'log-err' : level === 'DEBUG' ? 'log-debug' : 'log-info';
+        return `<span class="log-ts">${ts}</span> [<span class="${levelClass}">${level}</span>] <span class="log-name">${name}</span>: <span class="log-msg">${msg}</span>`;
+    }
+    return escaped;
+}
+
+function getLevel(line) {
+    const m = line.match(/\[(INFO|WARNING|ERROR|DEBUG)\]/);
+    return m ? m[1] : 'INFO';
+}
+
+function getLineClass(level) {
+    if (level === 'WARNING') return 'log-line-warn';
+    if (level === 'ERROR') return 'log-line-err';
+    return '';
+}
+
+function renderLogs() {
+    const search = searchInput.value.toLowerCase();
+    let filtered = rawLines.filter(line => {
+        const level = getLevel(line);
+        if (!activeLevels.has(level)) return false;
+        if (search && !line.toLowerCase().includes(search)) return false;
+        return true;
+    });
+
+    let html = '';
+    filtered.forEach(line => {
+        const level = getLevel(line);
+        let highlighted = highlightLine(line);
+        // Search highlight
+        if (search) {
+            const regex = new RegExp(`(${search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            highlighted = highlighted.replace(regex, '<span class="log-match">$1</span>');
+        }
+        html += `<p class="log-line ${getLineClass(level)}">${highlighted}</p>`;
+    });
+
+    logArea.innerHTML = html;
+    document.getElementById('line-count').textContent = `${filtered.length} / ${rawLines.length} lines`;
+
+    if (autoScroll.checked) {
+        logArea.scrollTop = logArea.scrollHeight;
+    }
+}
+
+function toggleLevel(btn) {
+    const level = btn.dataset.level;
+    if (activeLevels.has(level)) {
+        activeLevels.delete(level);
+        btn.className = 'log-level-btn';
+    } else {
+        activeLevels.add(level);
+        const cls = level === 'INFO' ? 'active-info' : level === 'WARNING' ? 'active-warning' : level === 'ERROR' ? 'active-error' : 'active-debug';
+        btn.className = 'log-level-btn ' + cls;
+    }
+    renderLogs();
+}
+
+searchInput.addEventListener('input', renderLogs);
 
 function pollLogs() {
     fetch('/api/logs').then(r => r.json()).then(data => {
         if (data.lines.length !== lastCount) {
-            logArea.innerHTML = data.lines.map(l => '<p>' + l.replace(/</g, '&lt;') + '</p>').join('');
+            rawLines = data.lines;
             lastCount = data.lines.length;
-            if (autoScroll.checked) {
-                logArea.scrollTop = logArea.scrollHeight;
-            }
+            renderLogs();
         }
     });
 }
+
+// Initialize
+rawLines = [{% for line in log_lines %}"{{ line | replace('\\', '\\\\') | replace('"', '\\"') | replace('\n', '') }}"{{ ',' if not loop.last }}{% endfor %}];
+renderLogs();
 setInterval(pollLogs, 2000);
 
 document.getElementById('clear-btn').addEventListener('click', () => {
     fetch('/api/logs/clear', { method: 'POST' }).then(() => {
-        logArea.innerHTML = '';
+        rawLines = [];
         lastCount = 0;
+        renderLogs();
     });
 });
 
 document.getElementById('copy-btn').addEventListener('click', () => {
-    const text = logArea.innerText;
-    navigator.clipboard.writeText(text).then(() => {
+    navigator.clipboard.writeText(rawLines.join('\n')).then(() => {
         const btn = document.getElementById('copy-btn');
         btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
-        setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy All'; }, 2000);
+        setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy'; }, 2000);
     });
 });
 
-// Initial scroll to bottom
+document.getElementById('download-btn').addEventListener('click', () => {
+    const blob = new Blob([rawLines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'auto-youtuber-logs.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+});
+
 logArea.scrollTop = logArea.scrollHeight;
 </script>
 {% endblock %}

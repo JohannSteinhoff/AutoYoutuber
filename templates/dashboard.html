@@ -1,330 +1,655 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Auto Youtuber{% endblock %}
 
+{% block extra_head %}
+<style>
+    /* ── Hero Stats ─────────────────────────────────── */
+    .stat-card {
+        background: var(--ay-surface);
+        backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+        -webkit-backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+        border: 1px solid var(--ay-glass-border);
+        border-radius: var(--ay-radius);
+        padding: 1rem 1.1rem;
+        position: relative;
+        overflow: hidden;
+        transition: transform var(--ay-transition), box-shadow var(--ay-transition), border-color var(--ay-transition);
+        box-shadow: var(--ay-shadow), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .stat-card::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: var(--ay-glass-shine);
+        pointer-events: none;
+        border-radius: inherit;
+    }
+    .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--ay-shadow-hover), inset 0 1px 0 rgba(255,255,255,0.06);
+        border-color: rgba(255, 255, 255, 0.12);
+    }
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        left: 0; top: 0; bottom: 0;
+        width: 4px;
+        border-radius: 4px 0 0 4px;
+        z-index: 1;
+    }
+    .stat-card.accent-red::before    { background: var(--ay-accent); box-shadow: 0 0 12px rgba(255,68,68,0.3); }
+    .stat-card.accent-green::before  { background: var(--ay-success); box-shadow: 0 0 12px rgba(0,200,83,0.3); }
+    .stat-card.accent-blue::before   { background: var(--ay-info); box-shadow: 0 0 12px rgba(41,182,246,0.3); }
+    .stat-card.accent-yellow::before { background: var(--ay-warning); box-shadow: 0 0 12px rgba(255,193,7,0.3); }
+    .stat-card.accent-purple::before { background: #ab47bc; box-shadow: 0 0 12px rgba(171,71,188,0.3); }
+
+    .stat-value {
+        font-size: 1.8rem;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: -0.03em;
+    }
+    .stat-label {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--ay-muted);
+        font-weight: 600;
+        margin-top: 0.25rem;
+    }
+    .stat-sub {
+        font-size: 0.75rem;
+        color: var(--ay-muted);
+        margin-top: 0.3rem;
+    }
+
+    /* Circular quota ring */
+    .quota-ring {
+        width: 52px;
+        height: 52px;
+    }
+    .quota-ring circle {
+        fill: none;
+        stroke-width: 5;
+        stroke-linecap: round;
+        transform: rotate(-90deg);
+        transform-origin: center;
+    }
+    .quota-ring .ring-bg   { stroke: rgba(255, 255, 255, 0.06); }
+    .quota-ring .ring-fill { transition: stroke-dashoffset 0.6s ease; }
+
+    /* ── Pipeline Stepper ──────────────────────────── */
+    .pipeline-stepper {
+        display: flex;
+        align-items: center;
+        gap: 0;
+    }
+    .step {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--ay-muted);
+        padding: 0.35rem 0.7rem;
+        border-radius: 20px;
+        transition: all var(--ay-transition);
+        border: 1px solid transparent;
+    }
+    .step.active {
+        color: #fff;
+        background: rgba(41, 182, 246, 0.12);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border-color: rgba(41, 182, 246, 0.2);
+        box-shadow: 0 0 12px rgba(41, 182, 246, 0.15);
+    }
+    .step.completed {
+        color: var(--ay-success);
+    }
+    .step-connector {
+        width: 24px;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.1);
+        flex-shrink: 0;
+    }
+    .step-connector.done {
+        background: var(--ay-success);
+    }
+
+    /* ── Command Center ────────────────────────────── */
+    .cmd-card {
+        background: var(--ay-surface);
+        backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+        -webkit-backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+        border: 1px solid var(--ay-glass-border);
+        border-radius: var(--ay-radius);
+        padding: 1rem 1.25rem;
+        box-shadow: var(--ay-shadow), inset 0 1px 0 rgba(255,255,255,0.04);
+        position: relative;
+        overflow: hidden;
+    }
+    .cmd-card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: var(--ay-glass-shine);
+        pointer-events: none;
+        border-radius: inherit;
+    }
+
+    /* ── Queue Items ───────────────────────────────── */
+    .queue-item {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        transition: background var(--ay-transition), box-shadow var(--ay-transition);
+    }
+    .queue-item:hover {
+        background: rgba(255, 255, 255, 0.04);
+    }
+    .queue-item:last-child {
+        border-bottom: none;
+    }
+    .queue-item.active-item {
+        border-left: 3px solid var(--ay-info);
+        animation: pulse-border 1.5s ease-in-out infinite;
+    }
+    .queue-item.done-item {
+        border-left: 3px solid var(--ay-success);
+    }
+    .queue-item.failed-item {
+        border-left: 3px solid var(--ay-danger);
+    }
+
+    .queue-progress {
+        height: 3px;
+        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.06);
+        margin-top: 0.5rem;
+        overflow: hidden;
+    }
+    .queue-progress-bar {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.5s ease;
+    }
+
+    /* Summary pills */
+    .summary-pill {
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 0.2em 0.55em;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        border: 1px solid rgba(255,255,255,0.04);
+    }
+
+    /* ── Activity Feed ─────────────────────────────── */
+    .activity-feed {
+        position: relative;
+        padding-left: 24px;
+    }
+    .activity-feed::before {
+        content: '';
+        position: absolute;
+        left: 7px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 1px;
+    }
+    .feed-item {
+        position: relative;
+        padding: 0.5rem 0;
+        margin-bottom: 0.25rem;
+    }
+    .feed-item::before {
+        content: '';
+        position: absolute;
+        left: -20px;
+        top: 0.75rem;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 2px solid var(--ay-surface);
+    }
+    .feed-item.feed-success::before { background: var(--ay-success); }
+    .feed-item.feed-failed::before  { background: var(--ay-danger); }
+    .feed-item.feed-other::before   { background: var(--ay-muted); }
+
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-15px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    .feed-item-new {
+        animation: slideDown 0.5s ease-out;
+    }
+
+    /* ── Empty State ───────────────────────────────── */
+    .empty-state {
+        text-align: center;
+        padding: 2.5rem 1rem;
+        color: var(--ay-muted);
+    }
+    .empty-state .bi {
+        font-size: 2.5rem;
+        display: block;
+        margin-bottom: 0.75rem;
+        opacity: 0.4;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<!-- Top status cards -->
+<!-- ═══ Hero Stats Bar ═══ -->
 <div class="row g-3 mb-4">
-    <!-- API Quota -->
-    <div class="col-md-4">
-        <div class="card h-100">
-            <div class="card-body">
-                <h6 class="card-title text-muted"><i class="bi bi-speedometer"></i> API Quota</h6>
-                <div class="d-flex justify-content-between mb-1">
-                    <span class="small fw-bold"><span id="quota-uploads">{{ quota.uploads_today }}</span>/6 uploaded</span>
-                    <span class="small text-muted"><span id="quota-remaining-uploads">{{ quota.max_uploads_remaining }}</span> left</span>
+    <!-- Uploads Today -->
+    <div class="col">
+        <div class="stat-card accent-red">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="stat-value" id="stat-uploads">{{ quota.uploads_today }}</div>
+                    <div class="stat-label">Uploaded Today</div>
                 </div>
-                <div class="progress mb-1" style="height: 10px;">
-                    <div id="quota-bar" class="progress-bar
-                        {% if quota.percent_used < 50 %}bg-success{% elif quota.percent_used < 80 %}bg-warning{% else %}bg-danger{% endif %}"
-                        style="width: {{ quota.percent_used }}%"></div>
-                </div>
-                <p class="mb-0 text-muted" style="font-size: 0.75rem;">
-                    <span id="quota-used">{{ quota.used }}</span>/{{ quota.daily_quota }} units — resets midnight PT
-                </p>
+                <i class="bi bi-cloud-arrow-up" style="font-size: 1.6rem; color: var(--ay-accent); opacity: 0.4;"></i>
             </div>
         </div>
     </div>
 
-    <!-- YouTube -->
-    <div class="col-md-4">
-        <div class="card h-100">
-            <div class="card-body d-flex justify-content-between align-items-center">
+    <!-- API Quota -->
+    <div class="col">
+        <div class="stat-card accent-blue">
+            <div class="d-flex align-items-center justify-content-between">
                 <div>
-                    <h6 class="card-title text-muted mb-1"><i class="bi bi-youtube"></i> YouTube</h6>
-                    {% if youtube_connected %}
-                    <span class="badge bg-success">Connected</span>
-                    {% else %}
-                    <span class="badge bg-warning">Not Connected</span>
-                    {% endif %}
+                    <div class="stat-value" id="stat-quota-pct">{{ (100 - quota.percent_used) | round(0) | int }}%</div>
+                    <div class="stat-label">Quota Left</div>
+                    <div class="stat-sub" id="stat-quota-detail">{{ quota.remaining }} / {{ quota.daily_quota }} units</div>
                 </div>
-                <a href="/oauth/start" class="btn btn-sm btn-outline-danger">
-                    <i class="bi bi-box-arrow-in-right"></i> {{ 'Reconnect' if youtube_connected else 'Connect' }}
-                </a>
+                <svg class="quota-ring" viewBox="0 0 52 52" id="quota-ring">
+                    <circle class="ring-bg" cx="26" cy="26" r="22"></circle>
+                    <circle class="ring-fill" cx="26" cy="26" r="22"
+                        stroke="{{ '#00c853' if quota.percent_used < 50 else '#ffc107' if quota.percent_used < 80 else '#ef5350' }}"
+                        stroke-dasharray="138.23"
+                        stroke-dashoffset="{{ 138.23 * quota.percent_used / 100 }}">
+                    </circle>
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- Queue Status -->
+    <div class="col">
+        <div class="stat-card accent-yellow">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="stat-value" id="stat-queue-total">{{ status.queue | length }}</div>
+                    <div class="stat-label">In Queue</div>
+                    <div class="stat-sub" id="stat-queue-breakdown">
+                        <span class="summary-pill" style="background: var(--ay-warning-soft); color: var(--ay-warning);">{{ status.queue_summary.queued }} queued</span>
+                        <span class="summary-pill" style="background: var(--ay-success-soft); color: var(--ay-success);">{{ status.queue_summary.done }} done</span>
+                        {% if status.queue_summary.failed > 0 %}
+                        <span class="summary-pill" style="background: var(--ay-danger-soft); color: var(--ay-danger);">{{ status.queue_summary.failed }} failed</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <i class="bi bi-collection-play" style="font-size: 1.6rem; color: var(--ay-warning); opacity: 0.4;"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Rate -->
+    <div class="col">
+        <div class="stat-card accent-green">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="stat-value" id="stat-success-rate">{{ stats.success_rate }}%</div>
+                    <div class="stat-label">Success Rate</div>
+                    <div class="stat-sub" id="stat-success-detail">{{ stats.uploaded }} of {{ stats.total }} total</div>
+                </div>
+                <i class="bi bi-graph-up-arrow" style="font-size: 1.6rem; color: var(--ay-success); opacity: 0.4;"></i>
             </div>
         </div>
     </div>
 
     <!-- Scheduler -->
-    <div class="col-md-4">
-        <div class="card h-100">
-            <div class="card-body d-flex justify-content-between align-items-center">
+    <div class="col">
+        <div class="stat-card accent-purple">
+            <div class="d-flex align-items-center justify-content-between">
                 <div>
-                    <h6 class="card-title text-muted mb-1"><i class="bi bi-clock"></i> Scheduler</h6>
-                    <span class="badge {{ 'bg-success' if scheduler_running else 'bg-secondary' }}">
-                        {{ 'Running' if scheduler_running else 'Stopped' }}
-                    </span>
-                    {% if scheduler_running %}
-                    <span class="text-muted small ms-2">Next: {{ next_run or 'N/A' }}</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="ay-status-dot {{ 'connected' if scheduler_running else 'disconnected' }}" style="{% if scheduler_running %}background:#ab47bc;box-shadow:0 0 6px #ab47bc;{% endif %}"></span>
+                        <span class="stat-value" style="font-size: 1.1rem;" id="stat-scheduler">{{ 'Active' if scheduler_running else 'Off' }}</span>
+                    </div>
+                    <div class="stat-label">Scheduler</div>
+                    {% if scheduler_running and next_run %}
+                    <div class="stat-sub" id="stat-next-run">Next: {{ next_run }}</div>
                     {% endif %}
                 </div>
-                {% if scheduler_running %}
-                <form method="POST" action="/scheduler/stop">
-                    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-stop-circle"></i> Stop</button>
-                </form>
-                {% else %}
-                <form method="POST" action="/scheduler/start">
-                    <button class="btn btn-sm btn-outline-success"><i class="bi bi-play-circle"></i> Start</button>
-                </form>
-                {% endif %}
+                <div>
+                    {% if scheduler_running %}
+                    <form method="POST" action="/scheduler/stop">
+                        <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-pause-circle"></i></button>
+                    </form>
+                    {% else %}
+                    <form method="POST" action="/scheduler/start">
+                        <button class="btn btn-sm btn-outline-success"><i class="bi bi-play-circle"></i></button>
+                    </form>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Main controls -->
-<div class="card mb-4">
-    <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div class="d-flex gap-2 align-items-center">
+<!-- ═══ Command Center ═══ -->
+<div class="cmd-card mb-4">
+    <div class="row align-items-center">
+        <!-- Left: Add Videos -->
+        <div class="col-lg-6 mb-3 mb-lg-0">
+            <div class="d-flex gap-2 align-items-center flex-wrap">
                 <form method="POST" action="/queue/burn" class="d-flex gap-2 align-items-center">
-                    <button class="btn btn-danger" {{ 'disabled' if pipeline_running }}>
-                        <i class="bi bi-search"></i> Find
+                    <button class="btn btn-ay-primary" {{ 'disabled' if pipeline_running }} id="burn-btn">
+                        <i class="bi bi-fire"></i> Find Viral Videos
                     </button>
-                    <input type="number" name="count" value="6" min="1" max="50" class="form-control form-control-sm" style="width: 70px;">
-                    <span class="text-muted small text-nowrap">videos</span>
+                    <input type="number" name="count" value="6" min="1" max="50" class="form-control form-control-sm" style="width: 65px; background: var(--ay-surface-alt); border-color: rgba(255,255,255,0.1);">
                 </form>
-                <form method="POST" action="/submit" class="d-flex gap-2">
-                    <input type="text" name="url" class="form-control form-control-sm" placeholder="Or paste a Reddit URL..." style="width: 300px;">
+                <span class="text-muted" style="font-size: 0.85rem;">or</span>
+                <form method="POST" action="/submit" class="d-flex gap-2 flex-grow-1" style="max-width: 380px;">
+                    <input type="text" name="url" class="form-control form-control-sm" placeholder="Paste a Reddit URL..."
+                        style="background: var(--ay-surface-alt); border-color: rgba(255,255,255,0.1);">
                     <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap" {{ 'disabled' if pipeline_running }}>
                         <i class="bi bi-plus-lg"></i> Add
                     </button>
                 </form>
             </div>
-            <div class="d-flex gap-2" id="arm-controls">
-                {% set queued_count = status.queue_summary.queued %}
-                {% if not status.armed %}
-                <form method="POST" action="/queue/arm">
-                    <button class="btn btn-warning" {{ 'disabled' if queued_count == 0 }}>
-                        <i class="bi bi-shield-check"></i> Arm Pipeline ({{ queued_count }})
+        </div>
+
+        <!-- Right: Pipeline Controls -->
+        <div class="col-lg-6">
+            <div class="d-flex align-items-center justify-content-lg-end gap-3 flex-wrap">
+                <!-- Pipeline Stepper -->
+                <div class="pipeline-stepper" id="pipeline-stepper">
+                    {% set pstate = status.state %}
+                    <div class="step {{ 'completed' if pstate != 'idle' or status.armed else 'active' }}">
+                        <i class="bi bi-circle{{ '-fill' if pstate == 'idle' and not status.armed else '' }}" style="font-size: 0.6rem;"></i> Idle
+                    </div>
+                    <div class="step-connector {{ 'done' if status.armed or pstate == 'running' }}"></div>
+                    <div class="step {{ 'active' if status.armed and pstate != 'running' else 'completed' if pstate == 'running' else '' }}">
+                        <i class="bi bi-shield-check" style="font-size: 0.75rem;"></i> Armed
+                    </div>
+                    <div class="step-connector {{ 'done' if pstate == 'running' }}"></div>
+                    <div class="step {{ 'active' if pstate == 'running' else '' }}">
+                        <i class="bi bi-play-circle" style="font-size: 0.75rem;"></i> Running
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="d-flex gap-2" id="arm-controls">
+                    {% set queued_count = status.queue_summary.queued %}
+                    {% if not status.armed %}
+                    <form method="POST" action="/queue/arm">
+                        <button class="btn btn-warning btn-sm" {{ 'disabled' if queued_count == 0 }}>
+                            <i class="bi bi-shield-check"></i> Arm ({{ queued_count }})
+                        </button>
+                    </form>
+                    {% else %}
+                    <form method="POST" action="/queue/start">
+                        <button class="btn btn-success btn-sm" {{ 'disabled' if pipeline_running }}>
+                            <i class="bi bi-play-fill"></i> Start
+                        </button>
+                    </form>
+                    <form method="POST" action="/queue/disarm">
+                        <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-x"></i></button>
+                    </form>
+                    {% endif %}
+                    <button class="btn btn-outline-secondary btn-sm" {{ 'disabled' if pipeline_running }} type="button" data-bs-toggle="modal" data-bs-target="#clearQueueModal">
+                        <i class="bi bi-trash3"></i>
                     </button>
-                </form>
-                {% else %}
-                <form method="POST" action="/queue/start">
-                    <button class="btn btn-success" {{ 'disabled' if pipeline_running }}>
-                        <i class="bi bi-play-fill"></i> Start Processing
-                    </button>
-                </form>
-                <form method="POST" action="/queue/disarm">
-                    <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-x"></i> Disarm</button>
-                </form>
-                {% endif %}
-                <form method="POST" action="/queue/clear">
-                    <button class="btn btn-outline-secondary btn-sm" {{ 'disabled' if pipeline_running }}>
-                        <i class="bi bi-trash"></i> Clear
-                    </button>
-                </form>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <!-- Pipeline state banner -->
-<div id="state-banner" class="alert alert-info d-flex align-items-center mb-4 {{ 'd-none' if status.state == 'idle' }}" role="alert">
-    <div class="spinner-border spinner-border-sm me-2" role="status" id="state-spinner"></div>
-    <span id="state-message">{{ status.message }}</span>
+<div id="state-banner" class="alert d-flex align-items-center mb-4 {{ 'd-none' if status.state == 'idle' }}" style="background: var(--ay-info-soft); border: 1px solid rgba(41,182,246,0.2); border-radius: var(--ay-radius-sm);" role="alert">
+    <div class="spinner-border spinner-border-sm me-2 text-info" role="status" id="state-spinner"></div>
+    <span id="state-message" class="fw-semibold" style="font-size: 0.9rem;">{{ status.message }}</span>
 </div>
 
-<!-- Queue -->
-<div class="card mb-4">
+<!-- ═══ Queue ═══ -->
+<div class="ay-card mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-list-check"></i> Queue</span>
-        <span class="badge bg-secondary" id="queue-count">{{ status.queue | length }} items</span>
+        <div id="queue-pills">
+            <span class="summary-pill" style="background: rgba(255,255,255,0.06); color: var(--ay-muted);" id="queue-count">{{ status.queue | length }} items</span>
+        </div>
     </div>
     <div class="card-body p-0" id="queue-container">
         {% if status.queue %}
         {% for item in status.queue %}
-        <div class="d-flex align-items-center border-bottom px-3 py-2 queue-item" data-uid="{{ item.uid }}">
+        {% set is_active = item.status in ('downloading', 'processing', 'uploading') %}
+        <div class="d-flex align-items-start queue-item {{ 'active-item' if is_active else 'done-item' if item.status == 'done' else 'failed-item' if item.status == 'failed' else '' }}" data-uid="{{ item.uid }}">
             <!-- Status icon -->
-            <div class="me-3" style="width: 32px; text-align: center;">
+            <div class="me-3 mt-1" style="width: 28px; text-align: center; flex-shrink: 0;">
                 {% if item.status == 'queued' %}
-                <i class="bi bi-hourglass text-muted fs-5"></i>
-                {% elif item.status in ('downloading', 'processing', 'uploading') %}
-                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                <i class="bi bi-hourglass text-muted" style="font-size: 1.1rem;"></i>
+                {% elif is_active %}
+                <div class="spinner-border spinner-border-sm text-info" role="status"></div>
                 {% elif item.status == 'done' %}
-                <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                <i class="bi bi-check-circle-fill text-success" style="font-size: 1.1rem;"></i>
                 {% elif item.status == 'failed' %}
-                <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+                <i class="bi bi-x-circle-fill text-danger" style="font-size: 1.1rem;"></i>
                 {% elif item.status == 'skipped' %}
-                <i class="bi bi-skip-forward-fill text-muted fs-5"></i>
+                <i class="bi bi-skip-forward-fill text-muted" style="font-size: 1.1rem;"></i>
                 {% endif %}
             </div>
             <!-- Info -->
             <div class="flex-grow-1 me-3">
-                <div class="fw-semibold" style="font-size: 0.9rem;">
-                    {% if item.url %}<a href="{{ item.url }}" target="_blank" class="text-decoration-none">{{ item.title[:70] }}</a>{% else %}{{ item.title[:70] }}{% endif %}
+                <div class="fw-semibold" style="font-size: 0.88rem;">
+                    {% if item.url %}<a href="{{ item.url }}" target="_blank" class="text-decoration-none">{{ item.title[:120] }}</a>{% else %}{{ item.title[:120] }}{% endif %}
                 </div>
-                <div class="text-muted" style="font-size: 0.78rem;">
+                <div class="text-ay-muted" style="font-size: 0.76rem;">
                     r/{{ item.subreddit }}
                     {% if item.author and item.author not in ('[deleted]', '[unknown]') %} · u/{{ item.author }}{% endif %}
-                    {% if item.score %} · {{ item.score }} pts{% endif %}
+                    {% if item.score %} · <i class="bi bi-arrow-up"></i> {{ item.score }}{% endif %}
                     {% if item.duration %} · {{ item.duration }}s{% endif %}
                 </div>
-            </div>
-            <!-- Status / progress -->
-            <div class="text-end me-2" style="min-width: 180px;">
-                {% if item.status == 'queued' %}
-                <span class="badge bg-secondary">Queued</span>
-                {% elif item.status == 'downloading' %}
-                <span class="badge bg-primary">Downloading...</span>
-                {% elif item.status == 'processing' %}
-                <span class="badge bg-warning text-dark">Processing...</span>
-                {% elif item.status == 'uploading' %}
-                <span class="badge bg-info">Uploading...</span>
-                {% elif item.status == 'done' %}
-                <a href="https://www.youtube.com/shorts/{{ item.youtube_id }}" target="_blank" class="badge bg-success text-decoration-none">
-                    Uploaded <i class="bi bi-box-arrow-up-right"></i>
-                </a>
-                {% elif item.status == 'failed' %}
-                <span class="badge bg-danger" title="{{ item.error }}">Failed</span>
-                {% elif item.status == 'skipped' %}
-                <span class="badge bg-secondary">Skipped</span>
+                {% if item.status == 'failed' and item.error %}
+                <div class="text-danger mt-1" style="font-size: 0.76rem;"><i class="bi bi-exclamation-triangle"></i> {{ item.error }}</div>
                 {% endif %}
-                <div class="text-muted" style="font-size: 0.72rem;">{{ item.progress }}</div>
+                <!-- Progress bar for active items -->
+                {% if is_active %}
+                <div class="queue-progress">
+                    <div class="queue-progress-bar bg-info" style="width: {{ '33' if item.status == 'downloading' else '66' if item.status == 'processing' else '90' }}%;"></div>
+                </div>
+                {% endif %}
             </div>
-            <!-- Remove button (only for queued items) -->
+            <!-- Status / action -->
+            <div class="text-end" style="min-width: 140px; flex-shrink: 0;">
+                {% if item.status == 'done' and item.youtube_id %}
+                <a href="https://www.youtube.com/shorts/{{ item.youtube_id }}" target="_blank" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size: 0.78rem;">
+                    <i class="bi bi-play-fill"></i> Watch
+                </a>
+                {% elif item.status == 'queued' %}
+                <span class="ay-badge" style="background: rgba(255,255,255,0.06); color: var(--ay-muted);">Queued</span>
+                {% elif item.status == 'downloading' %}
+                <span class="ay-badge" style="background: var(--ay-info-soft); color: var(--ay-info);">Downloading</span>
+                {% elif item.status == 'processing' %}
+                <span class="ay-badge" style="background: var(--ay-warning-soft); color: var(--ay-warning);">Processing</span>
+                {% elif item.status == 'uploading' %}
+                <span class="ay-badge" style="background: var(--ay-info-soft); color: var(--ay-info);">Uploading</span>
+                {% elif item.status == 'failed' %}
+                <span class="ay-badge" style="background: var(--ay-danger-soft); color: var(--ay-danger);">Failed</span>
+                {% elif item.status == 'skipped' %}
+                <span class="ay-badge" style="background: rgba(255,255,255,0.06); color: var(--ay-muted);">Skipped</span>
+                {% endif %}
+                <div class="text-ay-muted" style="font-size: 0.7rem; margin-top: 2px;">{{ item.progress }}</div>
+            </div>
+            <!-- Remove button -->
             {% if item.status == 'queued' %}
-            <form method="POST" action="/queue/remove/{{ item.uid }}" class="ms-1">
-                <button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Remove"><i class="bi bi-x"></i></button>
+            <form method="POST" action="/queue/remove/{{ item.uid }}" class="ms-2">
+                <button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Remove" style="font-size: 0.75rem;"><i class="bi bi-x-lg"></i></button>
             </form>
             {% endif %}
         </div>
         {% endfor %}
         {% else %}
-        <div class="text-center text-muted py-4" id="queue-empty">
-            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-            Queue is empty. Click <strong>Burn Daily Limit</strong> to find viral videos or paste a URL above.
+        <div class="empty-state" id="queue-empty">
+            <i class="bi bi-collection-play"></i>
+            <div class="fw-semibold mb-1">Queue is empty</div>
+            <div style="font-size: 0.85rem;">Click <strong>Find Viral Videos</strong> or paste a Reddit URL to get started</div>
         </div>
         {% endif %}
     </div>
 </div>
 
-<!-- History (inline) -->
-<div class="card mb-4">
+<!-- ═══ Activity Feed ═══ -->
+<div class="ay-card mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-archive"></i> Upload History</span>
-        <span class="badge bg-secondary" id="history-count">{{ history_total }} uploaded</span>
+        <span><i class="bi bi-activity"></i> Recent Activity</span>
+        <span class="ay-badge" style="background: rgba(255,255,255,0.06); color: var(--ay-muted);" id="history-count">{{ history_total }} total</span>
     </div>
-    <div class="table-responsive" id="history-container">
-        <table class="table table-sm table-hover mb-0">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Title</th>
-                    <th>Subreddit</th>
-                    <th>Author</th>
-                    <th>Score</th>
-                    <th>Duration</th>
-                    <th>Result</th>
-                </tr>
-            </thead>
-            <tbody id="history-body">
-                {% for u in history %}
-                <tr class="history-row">
-                    <td class="text-muted small text-nowrap">{{ u.uploaded_at }}</td>
-                    <td>
-                        {% if u.reddit_url %}
-                        <a href="{{ u.reddit_url }}" target="_blank" class="text-decoration-none">{{ u.title[:60] }}</a>
-                        {% else %}
-                        {{ u.title[:60] }}
-                        {% endif %}
-                    </td>
-                    <td>r/{{ u.subreddit }}</td>
-                    <td class="text-muted small">{% if u.author and u.author not in ('[deleted]', '[unknown]') %}u/{{ u.author }}{% endif %}</td>
-                    <td>{{ u.score }}</td>
-                    <td>{{ u.duration }}s</td>
-                    <td>
-                        {% if u.status == 'uploaded' and u.youtube_id %}
-                        <a href="https://www.youtube.com/shorts/{{ u.youtube_id }}" target="_blank" class="badge bg-success text-decoration-none">
-                            {{ u.youtube_id }} <i class="bi bi-box-arrow-up-right"></i>
-                        </a>
-                        {% elif u.status == 'failed' %}
-                        <span class="badge bg-danger" title="{{ u.error }}">Failed</span>
-                        {% else %}
-                        <span class="badge bg-secondary">{{ u.status }}</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% else %}
-                <tr id="history-empty"><td colspan="7" class="text-muted text-center py-4">No uploads yet</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="card-body" id="activity-feed-container">
+        {% if history %}
+        <div class="activity-feed" id="activity-feed">
+            {% for u in history[:10] %}
+            <div class="feed-item {{ 'feed-success' if u.status == 'uploaded' else 'feed-failed' if u.status == 'failed' else 'feed-other' }}" data-ytid="{{ u.youtube_id or '' }}">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <span style="font-size: 0.85rem;">
+                            {% if u.status == 'uploaded' and u.youtube_id %}
+                            <span class="text-success fw-semibold">Uploaded</span>
+                            <a href="https://www.youtube.com/shorts/{{ u.youtube_id }}" target="_blank" class="text-decoration-none">{{ u.title[:100] }}</a>
+                            {% elif u.status == 'failed' %}
+                            <span class="text-danger fw-semibold">Failed</span>
+                            <span>{{ u.title[:100] }}</span>
+                            {% else %}
+                            <span class="text-muted">{{ u.status }}</span>
+                            <span>{{ u.title[:100] }}</span>
+                            {% endif %}
+                        </span>
+                        <div class="text-ay-muted" style="font-size: 0.72rem;">
+                            r/{{ u.subreddit }}
+                            {% if u.score %} · <i class="bi bi-arrow-up"></i> {{ u.score }}{% endif %}
+                            {% if u.status == 'failed' and u.error %} · <span class="text-danger">{{ u.error[:40] }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <span class="text-ay-muted text-nowrap ms-2" style="font-size: 0.72rem;">{{ u.uploaded_at }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-clock-history"></i>
+            <div style="font-size: 0.85rem;">No activity yet</div>
+        </div>
+        {% endif %}
     </div>
-    <div class="card-footer text-center">
-        <a href="/history" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-list"></i> View Full History
+    <div class="card-body border-top border-subtle pt-2 pb-2 text-center">
+        <a href="/history" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-archive"></i> View Full History
         </a>
+    </div>
+</div>
+
+<!-- Clear Queue Confirmation Modal -->
+<div class="modal fade" id="clearQueueModal" tabindex="-1" aria-labelledby="clearQueueModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content" style="background: rgba(22, 26, 46, 0.75); backdrop-filter: blur(32px) saturate(1.6); -webkit-backdrop-filter: blur(32px) saturate(1.6); border: 1px solid rgba(255,255,255,0.1); border-radius: var(--ay-radius); box-shadow: 0 16px 48px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06); overflow: hidden;">
+            <div style="position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0) 50%,rgba(255,255,255,0.03) 100%);pointer-events:none;border-radius:inherit;"></div>
+            <div class="modal-body text-center px-4 pt-4 pb-2 position-relative">
+                <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(239,83,80,0.12); backdrop-filter: blur(8px); border: 1px solid rgba(239,83,80,0.2); display: inline-flex; align-items: center; justify-content: center; margin-bottom: 1rem; box-shadow: 0 0 20px rgba(239,83,80,0.15);">
+                    <i class="bi bi-trash3 text-danger" style="font-size: 1.3rem;"></i>
+                </div>
+                <h6 class="fw-bold mb-2" id="clearQueueModalLabel">Clear Queue</h6>
+                <p class="text-ay-muted mb-0" style="font-size: 0.85rem;">This will remove all items from the queue. This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer border-0 justify-content-center gap-2 pb-4 pt-3 position-relative">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">Cancel</button>
+                <form method="POST" action="/queue/clear" class="d-inline">
+                    <button type="submit" class="btn btn-danger btn-sm px-3" style="background: linear-gradient(135deg, var(--ay-danger), #d32f2f); border: none; box-shadow: 0 2px 12px rgba(239,83,80,0.25);"><i class="bi bi-trash3 me-1"></i>Clear All</button>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
-<style>
-@keyframes slideDown {
-    from { opacity: 0; transform: translateY(-30px); background-color: rgba(25, 135, 84, 0.15); }
-    to   { opacity: 1; transform: translateY(0); background-color: transparent; }
-}
-.history-row-new {
-    animation: slideDown 0.8s ease-out;
-}
-</style>
 <script>
 const statusIcons = {
-    queued: '<i class="bi bi-hourglass text-muted fs-5"></i>',
-    downloading: '<div class="spinner-border spinner-border-sm text-primary" role="status"></div>',
-    processing: '<div class="spinner-border spinner-border-sm text-warning" role="status"></div>',
+    queued: '<i class="bi bi-hourglass text-muted" style="font-size:1.1rem;"></i>',
+    downloading: '<div class="spinner-border spinner-border-sm text-info" role="status"></div>',
+    processing: '<div class="spinner-border spinner-border-sm text-info" role="status"></div>',
     uploading: '<div class="spinner-border spinner-border-sm text-info" role="status"></div>',
-    done: '<i class="bi bi-check-circle-fill text-success fs-5"></i>',
-    failed: '<i class="bi bi-x-circle-fill text-danger fs-5"></i>',
-    skipped: '<i class="bi bi-skip-forward-fill text-muted fs-5"></i>',
+    done: '<i class="bi bi-check-circle-fill text-success" style="font-size:1.1rem;"></i>',
+    failed: '<i class="bi bi-x-circle-fill text-danger" style="font-size:1.1rem;"></i>',
+    skipped: '<i class="bi bi-skip-forward-fill text-muted" style="font-size:1.1rem;"></i>',
 };
 
-function badgeHtml(item) {
-    if (item.status === 'done' && item.youtube_id) {
-        return `<a href="https://www.youtube.com/shorts/${item.youtube_id}" target="_blank" class="badge bg-success text-decoration-none">Uploaded <i class="bi bi-box-arrow-up-right"></i></a>`;
-    }
-    const map = {
-        queued: 'bg-secondary">Queued',
-        downloading: 'bg-primary">Downloading...',
-        processing: 'bg-warning text-dark">Processing...',
-        uploading: 'bg-info">Uploading...',
-        failed: 'bg-danger">Failed',
-        skipped: 'bg-secondary">Skipped',
-    };
-    return `<span class="badge ${map[item.status] || 'bg-secondary">Unknown'}</span>`;
-}
+const badgeStyles = {
+    queued: { bg: 'rgba(255,255,255,0.06)', color: 'var(--ay-muted)', text: 'Queued' },
+    downloading: { bg: 'var(--ay-info-soft)', color: 'var(--ay-info)', text: 'Downloading' },
+    processing: { bg: 'var(--ay-warning-soft)', color: 'var(--ay-warning)', text: 'Processing' },
+    uploading: { bg: 'var(--ay-info-soft)', color: 'var(--ay-info)', text: 'Uploading' },
+    failed: { bg: 'var(--ay-danger-soft)', color: 'var(--ay-danger)', text: 'Failed' },
+    skipped: { bg: 'rgba(255,255,255,0.06)', color: 'var(--ay-muted)', text: 'Skipped' },
+};
 
-function esc(s) { return s.replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function progressPct(status) {
+    return { downloading: 33, processing: 66, uploading: 90 }[status] || 0;
+}
 
 function renderQueue(queue) {
     const container = document.getElementById('queue-container');
     if (!queue.length) {
-        container.innerHTML = `<div class="text-center text-muted py-4"><i class="bi bi-inbox fs-3 d-block mb-2"></i>Queue is empty. Click <strong>Burn Daily Limit</strong> to find viral videos or paste a URL above.</div>`;
+        container.innerHTML = `<div class="empty-state"><i class="bi bi-collection-play"></i><div class="fw-semibold mb-1">Queue is empty</div><div style="font-size:0.85rem;">Click <strong>Find Viral Videos</strong> or paste a Reddit URL to get started</div></div>`;
         return;
     }
     let html = '';
     queue.forEach(item => {
-        const titleText = esc(item.title || '').substring(0, 70);
-        const titleHtml = item.url
-            ? `<a href="${esc(item.url)}" target="_blank" class="text-decoration-none">${titleText}</a>`
-            : titleText;
-        const sub = esc(item.subreddit || '');
-        const author = item.author && !['[deleted]', '[unknown]'].includes(item.author) ? ` &middot; u/${esc(item.author)}` : '';
-        const pts = item.score ? ` &middot; ${item.score} pts` : '';
+        const titleText = esc(item.title).substring(0, 120);
+        const isActive = ['downloading','processing','uploading'].includes(item.status);
+        const itemClass = isActive ? 'active-item' : item.status === 'done' ? 'done-item' : item.status === 'failed' ? 'failed-item' : '';
+        const titleHtml = item.url ? `<a href="${esc(item.url)}" target="_blank" class="text-decoration-none">${titleText}</a>` : titleText;
+        const sub = esc(item.subreddit);
+        const author = item.author && !['[deleted]','[unknown]'].includes(item.author) ? ` &middot; u/${esc(item.author)}` : '';
+        const pts = item.score ? ` &middot; <i class="bi bi-arrow-up"></i> ${item.score}` : '';
         const dur = item.duration ? ` &middot; ${item.duration}s` : '';
+        const errorHtml = item.status === 'failed' && item.error ? `<div class="text-danger mt-1" style="font-size:0.76rem;"><i class="bi bi-exclamation-triangle"></i> ${esc(item.error)}</div>` : '';
+        const progressHtml = isActive ? `<div class="queue-progress"><div class="queue-progress-bar bg-info" style="width:${progressPct(item.status)}%;"></div></div>` : '';
+
+        let actionHtml;
+        if (item.status === 'done' && item.youtube_id) {
+            actionHtml = `<a href="https://www.youtube.com/shorts/${esc(item.youtube_id)}" target="_blank" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:0.78rem;"><i class="bi bi-play-fill"></i> Watch</a>`;
+        } else {
+            const bs = badgeStyles[item.status] || badgeStyles.queued;
+            actionHtml = `<span class="ay-badge" style="background:${bs.bg};color:${bs.color};">${bs.text}</span>`;
+        }
+
         const removeBtn = item.status === 'queued'
-            ? `<form method="POST" action="/queue/remove/${item.uid}" class="ms-1"><button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Remove"><i class="bi bi-x"></i></button></form>`
+            ? `<form method="POST" action="/queue/remove/${item.uid}" class="ms-2"><button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Remove" style="font-size:0.75rem;"><i class="bi bi-x-lg"></i></button></form>`
             : '';
-        html += `
-        <div class="d-flex align-items-center border-bottom px-3 py-2 queue-item" data-uid="${item.uid}">
-            <div class="me-3" style="width:32px;text-align:center;">${statusIcons[item.status] || ''}</div>
+
+        html += `<div class="d-flex align-items-start queue-item ${itemClass}" data-uid="${item.uid}">
+            <div class="me-3 mt-1" style="width:28px;text-align:center;flex-shrink:0;">${statusIcons[item.status] || ''}</div>
             <div class="flex-grow-1 me-3">
-                <div class="fw-semibold" style="font-size:0.9rem;">${titleHtml}</div>
-                <div class="text-muted" style="font-size:0.78rem;">r/${sub}${author}${pts}${dur}</div>
+                <div class="fw-semibold" style="font-size:0.88rem;">${titleHtml}</div>
+                <div class="text-ay-muted" style="font-size:0.76rem;">r/${sub}${author}${pts}${dur}</div>
+                ${errorHtml}${progressHtml}
             </div>
-            <div class="text-end me-2" style="min-width:180px;">
-                ${badgeHtml(item)}
-                <div class="text-muted" style="font-size:0.72rem;">${esc(item.progress || '')}</div>
+            <div class="text-end" style="min-width:140px;flex-shrink:0;">
+                ${actionHtml}
+                <div class="text-ay-muted" style="font-size:0.7rem;margin-top:2px;">${esc(item.progress)}</div>
             </div>
             ${removeBtn}
         </div>`;
@@ -340,109 +665,173 @@ function updateArmControls(data) {
     if (data.armed) {
         el.innerHTML = `
             <form method="POST" action="/queue/start">
-                <button class="btn btn-success" ${running ? 'disabled' : ''}><i class="bi bi-play-fill"></i> Start Processing</button>
+                <button class="btn btn-success btn-sm" ${running ? 'disabled' : ''}><i class="bi bi-play-fill"></i> Start</button>
             </form>
             <form method="POST" action="/queue/disarm">
-                <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-x"></i> Disarm</button>
+                <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-x"></i></button>
             </form>
-            <form method="POST" action="/queue/clear">
-                <button class="btn btn-outline-secondary btn-sm" ${running ? 'disabled' : ''}><i class="bi bi-trash"></i> Clear</button>
-            </form>`;
+            <button class="btn btn-outline-secondary btn-sm" ${running ? 'disabled' : ''} type="button" data-bs-toggle="modal" data-bs-target="#clearQueueModal"><i class="bi bi-trash3"></i></button>`;
     } else {
         el.innerHTML = `
             <form method="POST" action="/queue/arm">
-                <button class="btn btn-warning" ${queued === 0 ? 'disabled' : ''}><i class="bi bi-shield-check"></i> Arm Pipeline (${queued})</button>
+                <button class="btn btn-warning btn-sm" ${queued === 0 ? 'disabled' : ''}><i class="bi bi-shield-check"></i> Arm (${queued})</button>
             </form>
-            <form method="POST" action="/queue/clear">
-                <button class="btn btn-outline-secondary btn-sm" ${running ? 'disabled' : ''}><i class="bi bi-trash"></i> Clear</button>
-            </form>`;
+            <button class="btn btn-outline-secondary btn-sm" ${running ? 'disabled' : ''} type="button" data-bs-toggle="modal" data-bs-target="#clearQueueModal"><i class="bi bi-trash3"></i></button>`;
+    }
+}
+
+function updateStepper(data) {
+    const running = data.state === 'running';
+    const armed = data.armed;
+    const steps = document.querySelectorAll('#pipeline-stepper .step');
+    const conns = document.querySelectorAll('#pipeline-stepper .step-connector');
+
+    // Reset
+    steps.forEach(s => { s.classList.remove('active','completed'); });
+    conns.forEach(c => { c.classList.remove('done'); });
+
+    if (running) {
+        steps[0].classList.add('completed');
+        steps[1].classList.add('completed');
+        steps[2].classList.add('active');
+        conns[0].classList.add('done');
+        conns[1].classList.add('done');
+    } else if (armed) {
+        steps[0].classList.add('completed');
+        steps[1].classList.add('active');
+        conns[0].classList.add('done');
+    } else {
+        steps[0].classList.add('active');
     }
 }
 
 let knownHistoryIds = new Set();
-// Seed with server-rendered history
-document.querySelectorAll('#history-body tr[data-ytid]').forEach(r => knownHistoryIds.add(r.dataset.ytid));
+document.querySelectorAll('.feed-item[data-ytid]').forEach(r => {
+    if (r.dataset.ytid) knownHistoryIds.add(r.dataset.ytid);
+});
 
-function renderHistory(uploads, total) {
-    const tbody = document.getElementById('history-body');
-    document.getElementById('history-count').textContent = total + ' uploaded';
+function renderActivityFeed(uploads, total) {
+    document.getElementById('history-count').textContent = total + ' total';
+    const container = document.getElementById('activity-feed-container');
 
     if (!uploads.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center py-4">No uploads yet</td></tr>';
+        container.innerHTML = '<div class="empty-state"><i class="bi bi-clock-history"></i><div style="font-size:0.85rem;">No activity yet</div></div>' +
+            '<div class="card-body border-top border-subtle pt-2 pb-2 text-center"><a href="/history" class="btn btn-sm btn-outline-secondary"><i class="bi bi-archive"></i> View Full History</a></div>';
         return;
     }
 
-    let html = '';
-    uploads.forEach(u => {
+    const items = uploads.slice(0, 10);
+    let html = '<div class="activity-feed" id="activity-feed">';
+    items.forEach(u => {
         const isNew = u.youtube_id && !knownHistoryIds.has(u.youtube_id);
-        const cls = isNew ? 'history-row-new' : '';
         if (u.youtube_id) knownHistoryIds.add(u.youtube_id);
+        const cls = isNew ? 'feed-item-new' : '';
+        const feedType = u.status === 'uploaded' ? 'feed-success' : u.status === 'failed' ? 'feed-failed' : 'feed-other';
+        const title = esc(u.title).substring(0, 100);
+        const sub = esc(u.subreddit);
 
-        const title = esc(u.title || '').substring(0, 60);
-        const sub = esc(u.subreddit || '');
-        const authorStr = u.author && !['[deleted]', '[unknown]'].includes(u.author) ? `u/${esc(u.author)}` : '';
-        const titleCell = u.reddit_url
-            ? `<a href="${esc(u.reddit_url)}" target="_blank" class="text-decoration-none">${title}</a>`
-            : title;
-        let resultCell;
+        let titleHtml;
         if (u.status === 'uploaded' && u.youtube_id) {
-            resultCell = `<a href="https://www.youtube.com/shorts/${esc(u.youtube_id)}" target="_blank" class="badge bg-success text-decoration-none">${esc(u.youtube_id)} <i class="bi bi-box-arrow-up-right"></i></a>`;
+            titleHtml = `<span class="text-success fw-semibold">Uploaded</span> <a href="https://www.youtube.com/shorts/${esc(u.youtube_id)}" target="_blank" class="text-decoration-none">${title}</a>`;
         } else if (u.status === 'failed') {
-            resultCell = `<span class="badge bg-danger" title="${esc(u.error || '')}">Failed</span>`;
+            titleHtml = `<span class="text-danger fw-semibold">Failed</span> <span>${title}</span>`;
         } else {
-            resultCell = `<span class="badge bg-secondary">${esc(u.status || '')}</span>`;
+            titleHtml = `<span class="text-muted">${esc(u.status)}</span> <span>${title}</span>`;
         }
 
-        html += `<tr class="history-row ${cls}" data-ytid="${esc(u.youtube_id || '')}">
-            <td class="text-muted small text-nowrap">${esc(u.uploaded_at || '')}</td>
-            <td>${titleCell}</td>
-            <td>r/${sub}</td>
-            <td class="text-muted small">${authorStr}</td>
-            <td>${u.score || 0}</td>
-            <td>${u.duration || 0}s</td>
-            <td>${resultCell}</td>
-        </tr>`;
+        const pts = u.score ? ` &middot; <i class="bi bi-arrow-up"></i> ${u.score}` : '';
+        const errorDetail = u.status === 'failed' && u.error ? ` &middot; <span class="text-danger">${esc(u.error).substring(0, 40)}</span>` : '';
+        const time = timeAgo(u.uploaded_at) || esc(u.uploaded_at || '');
+
+        html += `<div class="feed-item ${feedType} ${cls}" data-ytid="${esc(u.youtube_id || '')}">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <span style="font-size:0.85rem;">${titleHtml}</span>
+                    <div class="text-ay-muted" style="font-size:0.72rem;">r/${sub}${pts}${errorDetail}</div>
+                </div>
+                <span class="text-ay-muted text-nowrap ms-2" style="font-size:0.72rem;">${time}</span>
+            </div>
+        </div>`;
     });
-    tbody.innerHTML = html;
+    html += '</div>';
+    // Keep the footer link (it's outside activity-feed-container now)
+    container.innerHTML = html;
 }
 
+// ── Polling ──────────────────────────────────────
+let pollFailCount = 0;
+
 function poll() {
-    fetch('/api/status').then(r => r.json()).then(data => {
+    Promise.all([
+        fetch('/api/status').then(r => r.json()),
+        fetch('/api/quota').then(r => r.json()),
+        fetch('/api/history').then(r => r.json()),
+        fetch('/api/stats').then(r => r.json()),
+    ]).then(([data, q, h, stats]) => {
+        pollFailCount = 0;
+        document.getElementById('footer-connection').innerHTML = '<i class="bi bi-circle-fill text-success" style="font-size:0.5rem;"></i> Connected';
+
         // State banner
         const banner = document.getElementById('state-banner');
         if (data.state === 'idle') {
             banner.classList.add('d-none');
         } else {
             banner.classList.remove('d-none');
-            banner.className = 'alert d-flex align-items-center mb-4 ' + (data.state === 'scraping' ? 'alert-info' : 'alert-primary');
             document.getElementById('state-message').textContent = data.message || '';
         }
 
-        // Fully re-render queue from API data
+        // Queue
         renderQueue(data.queue);
         document.getElementById('queue-count').textContent = data.queue.length + ' items';
 
-        // Update arm/start controls
+        // Queue summary pills
+        const qp = document.getElementById('stat-queue-breakdown');
+        if (qp) {
+            let pills = `<span class="summary-pill" style="background:var(--ay-warning-soft);color:var(--ay-warning);">${data.queue_summary.queued} queued</span>`;
+            pills += `<span class="summary-pill" style="background:var(--ay-success-soft);color:var(--ay-success);">${data.queue_summary.done} done</span>`;
+            if (data.queue_summary.failed > 0) pills += `<span class="summary-pill" style="background:var(--ay-danger-soft);color:var(--ay-danger);">${data.queue_summary.failed} failed</span>`;
+            qp.innerHTML = pills;
+        }
+
+        // Controls
         updateArmControls(data);
+        updateStepper(data);
 
-        // Disable burn button while running
-        const burnBtn = document.querySelector('[action="/queue/burn"] button');
+        // Stats
+        document.getElementById('stat-queue-total').textContent = data.queue.length;
+        document.getElementById('stat-uploads').textContent = q.uploads_today;
+        document.getElementById('stat-quota-pct').textContent = Math.round(100 - q.percent_used) + '%';
+        document.getElementById('stat-quota-detail').textContent = q.remaining + ' / ' + q.daily_quota + ' units';
+        document.getElementById('stat-success-rate').textContent = stats.success_rate + '%';
+        document.getElementById('stat-success-detail').textContent = stats.uploaded + ' of ' + stats.total + ' total';
+
+        // Quota ring
+        const ring = document.querySelector('#quota-ring .ring-fill');
+        if (ring) {
+            ring.style.strokeDashoffset = (138.23 * q.percent_used / 100);
+            ring.style.stroke = q.percent_used < 50 ? '#00c853' : q.percent_used < 80 ? '#ffc107' : '#ef5350';
+        }
+
+        // Burn button
+        const burnBtn = document.getElementById('burn-btn');
         if (burnBtn) burnBtn.disabled = (data.state !== 'idle');
-    });
 
-    fetch('/api/quota').then(r => r.json()).then(q => {
-        document.getElementById('quota-uploads').textContent = q.uploads_today;
-        document.getElementById('quota-remaining-uploads').textContent = q.max_uploads_remaining;
-        document.getElementById('quota-used').textContent = q.used;
-        const bar = document.getElementById('quota-bar');
-        bar.style.width = q.percent_used + '%';
-        bar.className = 'progress-bar ' + (q.percent_used < 50 ? 'bg-success' : q.percent_used < 80 ? 'bg-warning' : 'bg-danger');
-    });
+        // Navbar pipeline state
+        if (typeof updateNavPipelineState === 'function') {
+            updateNavPipelineState(data.state, data.message, data.queue_summary.active);
+        }
 
-    fetch('/api/history').then(r => r.json()).then(h => {
-        renderHistory(h.uploads, h.total);
+        // Activity feed
+        renderActivityFeed(h.uploads, h.total);
+
+    }).catch(() => {
+        pollFailCount++;
+        if (pollFailCount >= 3) {
+            document.getElementById('footer-connection').innerHTML = '<i class="bi bi-circle-fill text-danger" style="font-size:0.5rem;"></i> Disconnected';
+        }
     });
 }
+
 setInterval(poll, 2000);
 </script>
 {% endblock %}

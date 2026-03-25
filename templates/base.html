@@ -7,37 +7,342 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <style>
-        body { min-height: 100vh; display: flex; flex-direction: column; }
+        :root {
+            --ay-accent: #ff4444;
+            --ay-accent-soft: rgba(255, 68, 68, 0.15);
+            --ay-surface: rgba(22, 26, 46, 0.65);
+            --ay-surface-alt: rgba(28, 32, 57, 0.6);
+            --ay-surface-hover: rgba(34, 38, 68, 0.7);
+            --ay-surface-solid: #161a2e;
+            --ay-success: #00c853;
+            --ay-success-soft: rgba(0, 200, 83, 0.15);
+            --ay-warning: #ffc107;
+            --ay-warning-soft: rgba(255, 193, 7, 0.12);
+            --ay-info: #29b6f6;
+            --ay-info-soft: rgba(41, 182, 246, 0.12);
+            --ay-danger: #ef5350;
+            --ay-danger-soft: rgba(239, 83, 80, 0.12);
+            --ay-muted: #6c7a96;
+            --ay-radius: 16px;
+            --ay-radius-sm: 10px;
+            --ay-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+            --ay-shadow-hover: 0 8px 32px rgba(0, 0, 0, 0.4);
+            --ay-transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --ay-glass-blur: 24px;
+            --ay-glass-border: rgba(255, 255, 255, 0.08);
+            --ay-glass-shine: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.04) 100%);
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #0a0c16;
+            color: #e0e4f0;
+            background-image:
+                radial-gradient(ellipse 80% 60% at 20% 10%, rgba(99, 102, 241, 0.08) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 50% at 80% 80%, rgba(236, 72, 153, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse 50% 40% at 50% 50%, rgba(41, 182, 246, 0.04) 0%, transparent 60%);
+        }
+
         main { flex: 1; }
-        .status-badge { font-size: 0.9rem; }
-        .log-area { font-family: monospace; font-size: 0.82rem; max-height: 500px; overflow-y: auto; background: #1a1a2e; padding: 1rem; border-radius: 0.5rem; }
-        .log-area p { margin: 0; line-height: 1.5; }
-        .nav-link.active { font-weight: 600; }
+
+        /* ── Navbar ──────────────────────────────────────── */
+        .ay-navbar {
+            background: rgba(22, 26, 46, 0.55) !important;
+            backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.6);
+            -webkit-backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.6);
+            border-bottom: 1px solid var(--ay-glass-border);
+            padding: 0.6rem 0;
+        }
+        .ay-navbar .navbar-brand {
+            font-weight: 700;
+            font-size: 1.15rem;
+            letter-spacing: -0.02em;
+        }
+        .ay-navbar .navbar-brand .bi-youtube {
+            font-size: 1.3rem;
+            vertical-align: -2px;
+        }
+        .ay-navbar .nav-link {
+            color: var(--ay-muted);
+            font-size: 0.88rem;
+            font-weight: 500;
+            padding: 0.5rem 0.85rem;
+            border-radius: var(--ay-radius-sm);
+            transition: color var(--ay-transition), background var(--ay-transition);
+        }
+        .ay-navbar .nav-link:hover {
+            color: #e0e4f0;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .ay-navbar .nav-link.active {
+            color: #fff;
+            background: rgba(255, 68, 68, 0.12);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 68, 68, 0.15);
+            font-weight: 600;
+        }
+        .ay-navbar .nav-link .bi {
+            font-size: 1rem;
+            vertical-align: -1px;
+            margin-right: 3px;
+        }
+
+        /* Navbar badges */
+        .nav-badge {
+            font-size: 0.65rem;
+            padding: 2px 5px;
+            vertical-align: top;
+            margin-left: 2px;
+            border-radius: 10px;
+            font-weight: 700;
+        }
+        .ay-status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-left: 5px;
+            vertical-align: middle;
+        }
+        .ay-status-dot.connected { background: var(--ay-success); box-shadow: 0 0 6px var(--ay-success); }
+        .ay-status-dot.disconnected { background: var(--ay-danger); box-shadow: 0 0 6px var(--ay-danger); }
+
+        .ay-pipeline-indicator {
+            font-size: 0.78rem;
+            color: var(--ay-info);
+            padding: 0.3rem 0.7rem;
+            background: var(--ay-info-soft);
+            border-radius: 20px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        /* ── Cards ───────────────────────────────────────── */
+        .ay-card {
+            background: var(--ay-surface);
+            backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+            -webkit-backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+            border: 1px solid var(--ay-glass-border);
+            border-radius: var(--ay-radius);
+            box-shadow: var(--ay-shadow), inset 0 1px 0 rgba(255,255,255,0.04);
+            transition: transform var(--ay-transition), box-shadow var(--ay-transition);
+            position: relative;
+            overflow: hidden;
+        }
+        .ay-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: var(--ay-glass-shine);
+            pointer-events: none;
+            border-radius: inherit;
+        }
+        .ay-card:hover {
+            box-shadow: var(--ay-shadow-hover), inset 0 1px 0 rgba(255,255,255,0.06);
+        }
+        .ay-card .card-header {
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--ay-glass-border);
+            font-weight: 600;
+            font-size: 0.9rem;
+            padding: 0.75rem 1rem;
+        }
+        .ay-card .card-body {
+            padding: 1rem;
+        }
+
+        /* ── Buttons ─────────────────────────────────────── */
+        .btn {
+            border-radius: var(--ay-radius-sm);
+            font-weight: 500;
+            transition: all var(--ay-transition);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+        .btn-outline-secondary {
+            border-color: var(--ay-glass-border);
+            background: rgba(255, 255, 255, 0.04);
+        }
+        .btn-outline-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        .btn-ay-primary {
+            background: linear-gradient(135deg, var(--ay-accent), #e03060);
+            border: none;
+            color: #fff;
+            font-weight: 600;
+            box-shadow: 0 2px 10px rgba(255, 68, 68, 0.2);
+        }
+        .btn-ay-primary:hover {
+            background: linear-gradient(135deg, #e03c3c, #d02858);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(255, 68, 68, 0.35);
+        }
+
+        /* ── Badges ──────────────────────────────────────── */
+        .ay-badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.3em 0.65em;
+            border-radius: 6px;
+        }
+
+        /* ── Toast container ─────────────────────────────── */
+        .ay-toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 1090;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+        .ay-toast-container .toast {
+            pointer-events: auto;
+            border: 1px solid var(--ay-glass-border);
+            border-radius: var(--ay-radius);
+            box-shadow: var(--ay-shadow-hover);
+            min-width: 300px;
+            backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+            -webkit-backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+        }
+        .ay-toast-container .toast .toast-body {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1rem;
+            font-size: 0.88rem;
+            font-weight: 500;
+        }
+        .toast-success { background: rgba(13, 51, 32, 0.8); border-left: 4px solid var(--ay-success) !important; }
+        .toast-error   { background: rgba(61, 21, 24, 0.8); border-left: 4px solid var(--ay-danger) !important; }
+        .toast-info    { background: rgba(13, 39, 56, 0.8); border-left: 4px solid var(--ay-info) !important; }
+        .toast-warning { background: rgba(51, 43, 13, 0.8); border-left: 4px solid var(--ay-warning) !important; }
+
+        /* ── Footer ──────────────────────────────────────── */
+        .ay-footer {
+            background: rgba(22, 26, 46, 0.5);
+            backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+            -webkit-backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+            border-top: 1px solid var(--ay-glass-border);
+            padding: 0.6rem 0;
+            font-size: 0.75rem;
+            color: var(--ay-muted);
+        }
+
+        /* ── Modal glass backdrop ────────────────────────── */
+        .modal-backdrop.show {
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+        .modal.fade .modal-dialog {
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: scale(0.92) translateY(10px);
+        }
+        .modal.show .modal-dialog {
+            transform: scale(1) translateY(0);
+        }
+
+        /* ── Scrollbar ───────────────────────────────────── */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+        /* ── Log area ────────────────────────────────────── */
+        .log-area {
+            font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            max-height: 600px;
+            overflow-y: auto;
+            background: rgba(10, 12, 22, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--ay-glass-border);
+            padding: 1rem;
+            border-radius: var(--ay-radius-sm);
+            line-height: 1.6;
+        }
+        .log-area p { margin: 0; }
+
+        /* ── Form inputs glass ──────────────────────────── */
+        .form-control, .form-select {
+            transition: border-color var(--ay-transition), box-shadow var(--ay-transition);
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: rgba(41, 182, 246, 0.4);
+            box-shadow: 0 0 0 3px rgba(41, 182, 246, 0.1), 0 0 16px rgba(41, 182, 246, 0.08);
+        }
+
+        /* ── Utility ─────────────────────────────────────── */
+        .text-ay-muted { color: var(--ay-muted) !important; }
+        .text-ay-accent { color: var(--ay-accent) !important; }
+        .border-subtle { border-color: rgba(255, 255, 255, 0.06) !important; }
+
+        /* Pulse animation for active items */
+        @keyframes pulse-border {
+            0%, 100% { border-left-color: var(--ay-info); }
+            50% { border-left-color: transparent; }
+        }
+        .pulse-active {
+            border-left: 3px solid var(--ay-info);
+            animation: pulse-border 1.5s ease-in-out infinite;
+        }
+
+        /* Skeleton loader */
+        @keyframes shimmer {
+            0% { background-position: -200px 0; }
+            100% { background-position: calc(200px + 100%) 0; }
+        }
+        .skeleton {
+            background: linear-gradient(90deg, var(--ay-surface) 25%, var(--ay-surface-hover) 50%, var(--ay-surface) 75%);
+            background-size: 200px 100%;
+            animation: shimmer 1.5s ease-in-out infinite;
+            border-radius: 4px;
+        }
+
+        /* Fade in animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom mb-4">
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg ay-navbar mb-4">
         <div class="container">
-            <a class="navbar-brand fw-bold" href="/">
+            <a class="navbar-brand" href="/">
                 <i class="bi bi-youtube text-danger"></i> Auto Youtuber
             </a>
-            <a href="https://studio.youtube.com" target="_blank" class="btn btn-sm btn-outline-danger ms-2" title="Open YouTube Studio">
-                <i class="bi bi-box-arrow-up-right"></i> My Channel
-            </a>
+
+            <!-- YouTube connection dot + channel link -->
+            <div class="d-flex align-items-center gap-2 order-lg-last">
+                <span id="nav-yt-status" class="d-flex align-items-center text-muted" style="font-size: 0.8rem;">
+                    <span class="ay-status-dot {{ 'connected' if youtube_connected else 'disconnected' }}"></span>
+                </span>
+                <span id="nav-pipeline-state" class="ay-pipeline-indicator d-none"></span>
+                <a href="https://studio.youtube.com" target="_blank" class="btn btn-sm btn-outline-secondary" title="YouTube Studio">
+                    <i class="bi bi-box-arrow-up-right"></i> Studio
+                </a>
+            </div>
+
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
+                <ul class="navbar-nav ms-auto me-3">
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="/">
                             <i class="bi bi-speedometer2"></i> Dashboard
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'submit' %}active{% endif %}" href="/submit">
-                            <i class="bi bi-send"></i> Submit
+                            <span id="nav-queue-badge" class="nav-badge bg-danger d-none">0</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -60,22 +365,108 @@
         </div>
     </nav>
 
-    <main class="container mb-5">
+    <!-- Toast container for notifications -->
+    <div class="ay-toast-container" id="toast-container">
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
-            <div class="alert alert-{{ 'success' if category == 'success' else 'danger' if category == 'error' else 'info' }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <div class="toast toast-{{ category }} show fade-in" role="alert">
+                <div class="toast-body">
+                    {% if category == 'success' %}<i class="bi bi-check-circle-fill text-success"></i>
+                    {% elif category == 'error' %}<i class="bi bi-exclamation-circle-fill text-danger"></i>
+                    {% elif category == 'warning' %}<i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                    {% else %}<i class="bi bi-info-circle-fill text-info"></i>
+                    {% endif %}
+                    {{ message }}
+                    <button type="button" class="btn-close btn-close-white ms-auto" style="font-size: 0.6rem;" onclick="this.closest('.toast').remove()"></button>
+                </div>
             </div>
             {% endfor %}
         {% endif %}
         {% endwith %}
+    </div>
 
+    <main class="container mb-5">
         {% block content %}{% endblock %}
     </main>
 
+    <!-- Footer -->
+    <footer class="ay-footer mt-auto">
+        <div class="container d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-youtube text-danger"></i> Auto Youtuber</span>
+            <span id="footer-info">
+                <span id="footer-connection" class="me-3"><i class="bi bi-circle-fill text-success" style="font-size: 0.5rem;"></i> Connected</span>
+                <span class="text-muted">Polling every 2s</span>
+            </span>
+        </div>
+    </footer>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Auto-dismiss toasts after 5 seconds
+        document.querySelectorAll('.ay-toast-container .toast').forEach(toast => {
+            setTimeout(() => {
+                toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(20px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        });
+
+        // Helper: show a toast dynamically
+        function showToast(message, category = 'info') {
+            const icons = {
+                success: '<i class="bi bi-check-circle-fill text-success"></i>',
+                error: '<i class="bi bi-exclamation-circle-fill text-danger"></i>',
+                warning: '<i class="bi bi-exclamation-triangle-fill text-warning"></i>',
+                info: '<i class="bi bi-info-circle-fill text-info"></i>',
+            };
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${category} show fade-in`;
+            toast.innerHTML = `<div class="toast-body">${icons[category] || icons.info} ${message}
+                <button type="button" class="btn-close btn-close-white ms-auto" style="font-size: 0.6rem;" onclick="this.closest('.toast').remove()"></button></div>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(20px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        }
+
+        // Relative time helper
+        function timeAgo(dateStr) {
+            if (!dateStr) return '';
+            const now = new Date();
+            const date = new Date(dateStr);
+            const diff = Math.floor((now - date) / 1000);
+            if (isNaN(diff)) return dateStr;
+            if (diff < 60) return 'just now';
+            if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+            if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+            if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+            return dateStr;
+        }
+
+        // Navbar pipeline state updater (called from dashboard polling)
+        function updateNavPipelineState(state, message, queueActive) {
+            const el = document.getElementById('nav-pipeline-state');
+            const badge = document.getElementById('nav-queue-badge');
+            if (state && state !== 'idle') {
+                el.classList.remove('d-none');
+                el.innerHTML = '<div class="spinner-border spinner-border-sm me-1" style="width:12px;height:12px;"></div> ' + (message || state);
+            } else {
+                el.classList.add('d-none');
+            }
+            if (queueActive > 0) {
+                badge.classList.remove('d-none');
+                badge.textContent = queueActive;
+            } else {
+                badge.classList.add('d-none');
+            }
+        }
+    </script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 
@@ -6,7 +5,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 
 import config
-from history import get_history, get_history_count
+from history import get_history, get_history_count, get_stats, get_distinct_subreddits, search_history
 from pipeline_runner import runner
 from quota import get_quota_info
 from settings_db import get_all_settings, set_many_settings
@@ -18,6 +17,14 @@ app.secret_key = os.urandom(24)
 
 scheduler = BackgroundScheduler()
 _scheduler_running = False
+
+
+@app.context_processor
+def inject_globals():
+    """Make common variables available in all templates."""
+    return {
+        "youtube_connected": is_youtube_connected(),
+    }
 
 
 # ── Scheduler helpers ──────────────────────────────────────────────
@@ -86,6 +93,7 @@ def dashboard():
         quota=get_quota_info(),
         history=get_history(limit=20),
         history_total=get_history_count(),
+        stats=get_stats(),
     )
 
 
@@ -142,7 +150,24 @@ def submit_url():
 
 @app.route("/history")
 def history_page():
-    return render_template("history.html", uploads=get_history(limit=100), total=get_history_count())
+    q = request.args.get("q", "")
+    subreddit = request.args.get("subreddit", "")
+    status_filter = request.args.get("status", "")
+    page = max(1, request.args.get("page", 1, type=int))
+
+    result = search_history(q=q, subreddit=subreddit, status=status_filter, page=page)
+    return render_template(
+        "history.html",
+        uploads=result["uploads"],
+        total=result["total"],
+        page=result["page"],
+        pages=result["pages"],
+        q=q,
+        subreddit=subreddit,
+        status_filter=status_filter,
+        subreddits=get_distinct_subreddits(),
+        stats=get_stats(),
+    )
 
 
 @app.route("/logs")
@@ -316,3 +341,8 @@ def api_logs():
 def api_logs_clear():
     runner.log_buffer.clear()
     return jsonify({"ok": True})
+
+
+@app.route("/api/stats")
+def api_stats():
+    return jsonify(get_stats())
