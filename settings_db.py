@@ -17,6 +17,8 @@ DEFAULTS = {
     "DB_PATH": "processed_posts.db",
     "LOG_FILE": "auto_youtuber.log",
     "MAX_DURATION_SECONDS": "59",
+    "SCHEDULER_INTERVAL_HOURS": "24",
+    "SCHEDULER_AUTO_PROCESS": "false",
 }
 
 

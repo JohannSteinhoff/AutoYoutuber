@@ -19,6 +19,8 @@ LOG_FILE = ""
 MAX_DURATION_SECONDS = 59
 OUTPUT_WIDTH = 1080
 OUTPUT_HEIGHT = 1920
+SCHEDULER_INTERVAL_HOURS = 24
+SCHEDULER_AUTO_PROCESS = False
 
 
 def reload():
@@ -27,6 +29,7 @@ def reload():
     global SUBREDDITS, TIME_FILTER, POST_LIMIT
     global YOUTUBE_CLIENT_SECRETS_FILE, YOUTUBE_TOKEN_FILE
     global VIDEOS_PER_DAY, TEMP_DIR, DB_PATH, LOG_FILE, MAX_DURATION_SECONDS
+    global SCHEDULER_INTERVAL_HOURS, SCHEDULER_AUTO_PROCESS
 
     REDDIT_CLIENT_ID = get_setting("REDDIT_CLIENT_ID")
     REDDIT_CLIENT_SECRET = get_setting("REDDIT_CLIENT_SECRET")
@@ -41,6 +44,8 @@ def reload():
     DB_PATH = get_setting("DB_PATH") or "processed_posts.db"
     LOG_FILE = get_setting("LOG_FILE") or "auto_youtuber.log"
     MAX_DURATION_SECONDS = int(get_setting("MAX_DURATION_SECONDS") or "59")
+    SCHEDULER_INTERVAL_HOURS = int(get_setting("SCHEDULER_INTERVAL_HOURS") or "24")
+    SCHEDULER_AUTO_PROCESS = get_setting("SCHEDULER_AUTO_PROCESS") == "true"
 
 
 # Load on first import

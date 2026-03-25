@@ -127,11 +127,11 @@ class PipelineRunner:
 
     # ── Queue management ───────────────────────────────────────────
 
-    def load_queue(self, count: int = 6) -> bool:
+    def load_queue(self, count: int = 6, auto_process: bool = False) -> bool:
         """Scrape Reddit and fill the queue with top viral videos. Returns False if already busy."""
         if self.is_running():
             return False
-        self._thread = threading.Thread(target=self._scrape_to_queue, args=(count,), daemon=True)
+        self._thread = threading.Thread(target=self._scrape_to_queue, args=(count, auto_process), daemon=True)
         self._thread.start()
         return True
 
@@ -144,13 +144,24 @@ class PipelineRunner:
         return True
 
     def clear_queue(self):
-        """Remove all items from the queue."""
+        """Remove all items from the queue, marking queued items as processed so they won't reappear."""
+        for item in self.queue:
+            if item.status == "queued":
+                post_id = item.post.get("id")
+                if post_id:
+                    mark_processed(post_id)
         self.queue.clear()
         self.armed = False
         self._persist_queue()
 
     def remove_from_queue(self, uid: str):
-        """Remove a specific item by uid if it's still queued."""
+        """Remove a specific item by uid if it's still queued, and mark it processed so it won't reappear."""
+        for item in self.queue:
+            if item.uid == uid and item.status == "queued":
+                post_id = item.post.get("id")
+                if post_id:
+                    mark_processed(post_id)
+                break
         self.queue = [item for item in self.queue if not (item.uid == uid and item.status == "queued")]
         self._persist_queue()
 
@@ -227,7 +238,7 @@ class PipelineRunner:
 
     # ── Internal: scrape to queue ──────────────────────────────────
 
-    def _scrape_to_queue(self, count: int = 6):
+    def _scrape_to_queue(self, count: int = 6, auto_process: bool = False):
         self.state = "scraping"
         self.message = f"Finding top {count} viral videos..."
         try:
@@ -248,15 +259,23 @@ class PipelineRunner:
                 self.queue.append(QueueItem(post))
 
             logger.info("Queued %d videos for review", len(posts))
-            self.message = f"{len(posts)} videos queued — review and arm to start"
             self.armed = False
             self._persist_queue()
+
+            if auto_process and any(i.status == "queued" for i in self.queue):
+                logger.info("Auto-process enabled — arming and processing queue")
+                self.armed = True
+                self.message = f"Auto-processing {len(posts)} videos..."
+                self._process_queue()
+            else:
+                self.message = f"{len(posts)} videos queued — review and arm to start"
 
         except Exception as e:
             logger.exception("Scraping failed")
             self.message = f"Scrape error: {e}"
         finally:
-            self.state = "idle"
+            if self.state == "scraping":
+                self.state = "idle"
 
     def _extract_to_queue(self, url: str):
         self.state = "scraping"

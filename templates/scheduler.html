@@ -1,0 +1,559 @@
+{% extends "base.html" %}
+{% block title %}Scheduler — Auto Youtuber{% endblock %}
+
+{% block extra_head %}
+<style>
+    .sched-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.25rem; }
+    .sched-stat-card {
+        background: var(--ay-surface);
+        backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+        -webkit-backdrop-filter: blur(var(--ay-glass-blur)) saturate(1.4);
+        border: 1px solid var(--ay-glass-border);
+        border-radius: var(--ay-radius);
+        padding: 1rem 1.15rem;
+        box-shadow: var(--ay-shadow), inset 0 1px 0 rgba(255,255,255,0.04);
+        position: relative;
+        overflow: hidden;
+    }
+    .sched-stat-card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: var(--ay-glass-shine);
+        pointer-events: none;
+        border-radius: inherit;
+    }
+    .sched-stat-icon {
+        width: 36px; height: 36px; border-radius: 10px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.1rem; margin-bottom: 0.75rem;
+    }
+    .sched-stat-value { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+    .sched-stat-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ay-muted); font-weight: 600; margin-top: 0.25rem; }
+
+    /* Queue items */
+    .sched-queue-item {
+        display: flex; align-items: center; gap: 0.85rem;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .sched-queue-item:last-child { border-bottom: none; }
+    .sched-queue-num {
+        width: 26px; height: 26px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.72rem; font-weight: 700; flex-shrink: 0;
+    }
+    .sched-queue-num.done { background: var(--ay-success-soft); color: var(--ay-success); }
+    .sched-queue-num.active { background: var(--ay-info-soft); color: var(--ay-info); }
+    .sched-queue-num.queued { background: rgba(255,255,255,0.06); color: var(--ay-muted); }
+    .sched-queue-num.failed { background: var(--ay-danger-soft); color: var(--ay-danger); }
+    .sched-queue-title { font-size: 0.88rem; font-weight: 500; flex: 1; min-width: 0; }
+    .sched-queue-title span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sched-queue-meta { font-size: 0.72rem; color: var(--ay-muted); margin-top: 2px; }
+    .sched-queue-badge { font-size: 0.72rem; font-weight: 600; padding: 0.2em 0.6em; border-radius: 6px; white-space: nowrap; }
+
+    /* Progress bar */
+    .sched-progress { height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+    .sched-progress-bar { height: 100%; background: var(--ay-info); border-radius: 2px; transition: width 0.4s; }
+
+    /* Settings form */
+    .sched-field label { font-size: 0.78rem; font-weight: 600; color: var(--ay-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.3rem; }
+    .sched-field { margin-bottom: 1rem; }
+    .sched-field .form-control, .sched-field .form-select {
+        background: var(--ay-surface-alt); border-color: rgba(255,255,255,0.08); font-size: 0.88rem;
+    }
+    .sched-field .form-control:focus, .sched-field .form-select:focus {
+        border-color: var(--ay-accent); box-shadow: 0 0 0 2px var(--ay-accent-soft);
+    }
+
+    /* Toggle switch */
+    .sched-toggle { display: flex; align-items: center; gap: 0.65rem; cursor: pointer; }
+    .sched-toggle input { display: none; }
+    .sched-toggle-track {
+        width: 42px; height: 24px; border-radius: 12px;
+        background: rgba(255,255,255,0.1); position: relative; transition: background 0.25s;
+    }
+    .sched-toggle-track::after {
+        content: ''; position: absolute; top: 3px; left: 3px;
+        width: 18px; height: 18px; border-radius: 50%;
+        background: #fff; transition: transform 0.25s;
+    }
+    .sched-toggle input:checked + .sched-toggle-track {
+        background: var(--ay-success);
+    }
+    .sched-toggle input:checked + .sched-toggle-track::after {
+        transform: translateX(18px);
+    }
+    .sched-toggle-label { font-size: 0.88rem; font-weight: 500; }
+
+    /* Countdown */
+    .countdown { font-family: 'Cascadia Code', 'Fira Code', monospace; }
+
+    /* Timeline */
+    .timeline-item {
+        display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.6rem 0;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .timeline-item:last-child { border-bottom: none; }
+    .timeline-dot {
+        width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 5px;
+    }
+    .timeline-dot.success { background: var(--ay-success); box-shadow: 0 0 6px var(--ay-success); }
+    .timeline-dot.failed { background: var(--ay-danger); box-shadow: 0 0 6px var(--ay-danger); }
+    .timeline-dot.upcoming { background: rgba(255,255,255,0.15); border: 2px solid var(--ay-muted); }
+    .timeline-time { font-size: 0.78rem; color: var(--ay-muted); white-space: nowrap; }
+    .timeline-desc { font-size: 0.85rem; }
+
+    /* Quota ring */
+    .quota-ring-container { display: flex; align-items: center; gap: 1rem; }
+    .quota-ring { width: 56px; height: 56px; flex-shrink: 0; }
+    .quota-ring-bg { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 5; }
+    .quota-ring-fill { fill: none; stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset 0.6s; }
+
+    @media (max-width: 767px) {
+        .sched-stats { grid-template-columns: repeat(2, 1fr); }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0"><i class="bi bi-clock-history"></i> Scheduler</h5>
+    <div class="d-flex gap-2">
+        {% if scheduler_running %}
+        <form method="POST" action="/scheduler/stop">
+            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-stop-fill"></i> Stop Scheduler</button>
+        </form>
+        {% else %}
+        <form method="POST" action="/scheduler/start">
+            <button class="btn btn-sm btn-ay-primary"><i class="bi bi-play-fill"></i> Start Scheduler</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Stats Row -->
+<div class="sched-stats">
+    <!-- Status -->
+    <div class="sched-stat-card">
+        <div class="sched-stat-icon" style="background: {{ 'var(--ay-success-soft)' if scheduler_running else 'var(--ay-danger-soft)' }}; color: {{ 'var(--ay-success)' if scheduler_running else 'var(--ay-danger)' }};">
+            <i class="bi {{ 'bi-play-circle-fill' if scheduler_running else 'bi-pause-circle-fill' }}"></i>
+        </div>
+        <div class="sched-stat-value" id="statStatus">{{ 'Active' if scheduler_running else 'Off' }}</div>
+        <div class="sched-stat-label">Scheduler Status</div>
+    </div>
+
+    <!-- Next Run -->
+    <div class="sched-stat-card">
+        <div class="sched-stat-icon" style="background: var(--ay-info-soft); color: var(--ay-info);">
+            <i class="bi bi-hourglass-split"></i>
+        </div>
+        <div class="sched-stat-value countdown" id="statCountdown" style="font-size: 1.25rem;">
+            {% if next_run %}...{% else %}--:--:--{% endif %}
+        </div>
+        <div class="sched-stat-label">Next Run</div>
+    </div>
+
+    <!-- Interval -->
+    <div class="sched-stat-card">
+        <div class="sched-stat-icon" style="background: var(--ay-warning-soft); color: var(--ay-warning);">
+            <i class="bi bi-arrow-repeat"></i>
+        </div>
+        <div class="sched-stat-value" id="statInterval">{{ interval_hours }}h</div>
+        <div class="sched-stat-label">Run Interval</div>
+    </div>
+
+    <!-- Quota -->
+    <div class="sched-stat-card">
+        <div class="sched-stat-icon" style="background: var(--ay-accent-soft); color: var(--ay-accent);">
+            <i class="bi bi-lightning-charge-fill"></i>
+        </div>
+        <div class="sched-stat-value" id="statQuota">{{ quota.uploads_today }}/{{ quota.max_uploads_remaining + quota.uploads_today }}</div>
+        <div class="sched-stat-label">Uploads Today</div>
+    </div>
+</div>
+
+<!-- Main two-column layout -->
+<div class="row g-3">
+    <!-- Left: Today's Queue + Upcoming -->
+    <div class="col-lg-8">
+        <!-- Today's Queue -->
+        <div class="ay-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-collection-play"></i> Today's Queue</span>
+                <span class="sched-queue-badge" id="queueCountBadge"
+                      style="background: var(--ay-accent-soft); color: var(--ay-accent);">
+                    {{ status.queue_summary.total }} items
+                </span>
+            </div>
+            <div class="card-body" id="todayQueue">
+                {% if status.queue %}
+                {% for item in status.queue %}
+                <div class="sched-queue-item">
+                    <div class="sched-queue-num {{ item.status if item.status in ('done','failed') else ('active' if item.status in ('downloading','processing','uploading') else 'queued') }}">
+                        {% if item.status == 'done' %}<i class="bi bi-check"></i>
+                        {% elif item.status == 'failed' %}<i class="bi bi-x"></i>
+                        {% elif item.status in ('downloading','processing','uploading') %}<div class="spinner-border spinner-border-sm" style="width:14px;height:14px;"></div>
+                        {% else %}{{ loop.index }}{% endif %}
+                    </div>
+                    <div class="sched-queue-title">
+                        <span>{{ item.title[:65] or 'Untitled' }}</span>
+                        <div class="sched-queue-meta">
+                            r/{{ item.subreddit }}
+                            {% if item.author %} &middot; u/{{ item.author }}{% endif %}
+                            {% if item.duration %} &middot; {{ item.duration }}s{% endif %}
+                        </div>
+                        {% if item.status in ('downloading','processing','uploading') %}
+                        <div class="sched-progress">
+                            <div class="sched-progress-bar" style="width: {{ '33' if item.status == 'downloading' else ('66' if item.status == 'processing' else '90') }}%;"></div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div>
+                        {% if item.status == 'done' %}
+                        <span class="sched-queue-badge" style="background: var(--ay-success-soft); color: var(--ay-success);">
+                            <i class="bi bi-check-circle-fill"></i> Done
+                        </span>
+                        {% elif item.status == 'failed' %}
+                        <span class="sched-queue-badge" style="background: var(--ay-danger-soft); color: var(--ay-danger);" title="{{ item.error }}">
+                            <i class="bi bi-x-circle-fill"></i> Failed
+                        </span>
+                        {% elif item.status in ('downloading','processing','uploading') %}
+                        <span class="sched-queue-badge" style="background: var(--ay-info-soft); color: var(--ay-info);">
+                            {{ item.status | capitalize }}
+                        </span>
+                        {% elif item.status == 'skipped' %}
+                        <span class="sched-queue-badge" style="background: rgba(255,255,255,0.06); color: var(--ay-muted);">Skipped</span>
+                        {% else %}
+                        <span class="sched-queue-badge" style="background: rgba(255,255,255,0.06); color: var(--ay-muted);">Queued</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="text-center py-4 text-ay-muted">
+                    <i class="bi bi-inbox" style="font-size: 2rem; opacity: 0.3;"></i>
+                    <p class="mt-2 mb-0" style="font-size: 0.88rem;">No videos in queue</p>
+                    <p class="mb-0" style="font-size: 0.78rem;">{% if scheduler_running %}Next run will scrape videos automatically{% else %}Start the scheduler or scrape from the Dashboard{% endif %}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Upcoming Runs Timeline -->
+        <div class="ay-card mt-3">
+            <div class="card-header"><i class="bi bi-calendar-week"></i> Upcoming Schedule</div>
+            <div class="card-body" id="upcomingTimeline">
+                {% if scheduler_running and next_run %}
+                <p class="text-ay-muted mb-0" style="font-size: 0.85rem;">Upcoming runs are estimated based on the current interval.</p>
+                {% else %}
+                <div class="text-center py-3 text-ay-muted">
+                    <p class="mb-0" style="font-size: 0.85rem;">Start the scheduler to see upcoming runs</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Uploads -->
+        <div class="ay-card mt-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-clock"></i> Recent Uploads</span>
+                <a href="/history" class="text-decoration-none" style="font-size: 0.78rem; color: var(--ay-info);">View all <i class="bi bi-arrow-right"></i></a>
+            </div>
+            <div class="card-body">
+                {% if history %}
+                {% for u in history[:8] %}
+                <div class="timeline-item">
+                    <div class="timeline-dot {{ 'success' if u.status == 'uploaded' else 'failed' }}"></div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            {% if u.youtube_id %}
+                            <a href="https://www.youtube.com/shorts/{{ u.youtube_id }}" target="_blank" class="text-decoration-none">{{ u.title[:55] }}</a>
+                            {% else %}
+                            {{ u.title[:55] }}
+                            {% endif %}
+                        </div>
+                        <div style="font-size: 0.72rem; color: var(--ay-muted);">r/{{ u.subreddit }}</div>
+                    </div>
+                    <div class="timeline-time">{{ u.uploaded_at }}</div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="text-center py-3 text-ay-muted" style="font-size: 0.85rem;">No uploads yet</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Settings + Quota -->
+    <div class="col-lg-4">
+        <!-- Settings -->
+        <div class="ay-card">
+            <div class="card-header"><i class="bi bi-gear"></i> Schedule Settings</div>
+            <div class="card-body">
+                <form method="POST" action="/scheduler/save">
+                    <div class="sched-field">
+                        <label>Run Interval (hours)</label>
+                        <input type="number" name="interval_hours" class="form-control" value="{{ interval_hours }}" min="1" max="168">
+                        <div class="form-text" style="font-size: 0.72rem; color: var(--ay-muted);">How often the scheduler scrapes for new videos (1–168 hrs)</div>
+                    </div>
+
+                    <div class="sched-field">
+                        <label>Videos Per Run</label>
+                        <input type="number" name="videos_per_run" class="form-control" value="{{ videos_per_run }}" min="1" max="50">
+                        <div class="form-text" style="font-size: 0.72rem; color: var(--ay-muted);">Number of videos to scrape each run</div>
+                    </div>
+
+                    <div class="sched-field">
+                        <label class="d-block mb-2">Auto-Process</label>
+                        <label class="sched-toggle">
+                            <input type="checkbox" name="auto_process" value="1" {{ 'checked' if auto_process }}>
+                            <span class="sched-toggle-track"></span>
+                            <span class="sched-toggle-label">{{ 'Enabled' if auto_process else 'Disabled' }}</span>
+                        </label>
+                        <div class="form-text mt-2" style="font-size: 0.72rem; color: var(--ay-muted);">When enabled, scraped videos are automatically processed and uploaded without manual arming</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-ay-primary btn-sm w-100 mt-2">
+                        <i class="bi bi-check-lg"></i> Save Settings
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Quota Overview -->
+        <div class="ay-card mt-3">
+            <div class="card-header"><i class="bi bi-speedometer"></i> API Quota</div>
+            <div class="card-body">
+                <div class="quota-ring-container mb-3">
+                    <svg class="quota-ring" viewBox="0 0 42 42">
+                        <circle class="quota-ring-bg" cx="21" cy="21" r="17"></circle>
+                        <circle class="quota-ring-fill" cx="21" cy="21" r="17"
+                                stroke="{{ 'var(--ay-success)' if quota.percent_used < 60 else ('var(--ay-warning)' if quota.percent_used < 85 else 'var(--ay-danger)') }}"
+                                stroke-dasharray="{{ (quota.percent_used / 100) * 106.8 }} 106.8"
+                                transform="rotate(-90 21 21)"></circle>
+                    </svg>
+                    <div>
+                        <div style="font-size: 1.15rem; font-weight: 700;" id="quotaPercent">{{ quota.percent_used }}%</div>
+                        <div style="font-size: 0.72rem; color: var(--ay-muted);">quota used today</div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between" style="font-size: 0.82rem;">
+                    <span class="text-ay-muted">Units used</span>
+                    <span id="quotaUsed">{{ quota.used }} / {{ quota.daily_quota }}</span>
+                </div>
+                <div class="d-flex justify-content-between mt-1" style="font-size: 0.82rem;">
+                    <span class="text-ay-muted">Uploads today</span>
+                    <span id="quotaUploads">{{ quota.uploads_today }}</span>
+                </div>
+                <div class="d-flex justify-content-between mt-1" style="font-size: 0.82rem;">
+                    <span class="text-ay-muted">Uploads remaining</span>
+                    <span id="quotaRemaining" style="color: var(--ay-success);">{{ quota.max_uploads_remaining }}</span>
+                </div>
+                <div class="d-flex justify-content-between mt-1" style="font-size: 0.82rem;">
+                    <span class="text-ay-muted">Cost per upload</span>
+                    <span>{{ quota.upload_cost }} units</span>
+                </div>
+                <hr style="border-color: rgba(255,255,255,0.06); margin: 0.75rem 0;">
+                <div style="font-size: 0.72rem; color: var(--ay-muted);">
+                    <i class="bi bi-info-circle"></i> Quota resets daily at midnight Pacific Time
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Info -->
+        <div class="ay-card mt-3">
+            <div class="card-header"><i class="bi bi-info-circle"></i> How It Works</div>
+            <div class="card-body" style="font-size: 0.82rem; color: var(--ay-muted); line-height: 1.6;">
+                <p class="mb-2"><strong style="color: var(--ay-text-primary);">1. Scrape</strong> — The scheduler searches Reddit for top viral videos at each interval.</p>
+                <p class="mb-2"><strong style="color: var(--ay-text-primary);">2. Queue</strong> — Found videos are added to the queue for review or auto-processing.</p>
+                <p class="mb-0"><strong style="color: var(--ay-text-primary);">3. Upload</strong> — Videos are downloaded, reformatted to 9:16, and uploaded as YouTube Shorts.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+    const nextRunStr = {{ (next_run or '') | tojson }};
+    const intervalHours = {{ interval_hours }};
+    const isRunning = {{ 'true' if scheduler_running else 'false' }};
+
+    // ── Countdown Timer ──────────────────────────────────────────
+    let nextRunTarget = null;
+
+    function parseNextRun(str) {
+        if (!str) return null;
+        // "2026-03-25 14:00:00" → "2026-03-25T14:00:00"
+        const d = new Date(str.replace(' ', 'T'));
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    function updateCountdown() {
+        const el = document.getElementById('statCountdown');
+        if (!nextRunTarget || !isRunning) {
+            el.textContent = '--:--:--';
+            return;
+        }
+        const now = new Date();
+        let diff = Math.max(0, Math.floor((nextRunTarget - now) / 1000));
+
+        if (diff <= 0) {
+            el.textContent = 'Running...';
+            return;
+        }
+
+        const h = Math.floor(diff / 3600);
+        const m = Math.floor((diff % 3600) / 60);
+        const s = diff % 60;
+        el.textContent = `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+    }
+
+    nextRunTarget = parseNextRun(nextRunStr);
+    if (nextRunTarget) {
+        updateCountdown();
+        setInterval(updateCountdown, 1000);
+    }
+
+    // ── Upcoming Runs Timeline ───────────────────────────────────
+    function renderUpcoming() {
+        const container = document.getElementById('upcomingTimeline');
+        if (!isRunning || !nextRunTarget) return;
+
+        const runs = [];
+        const base = nextRunTarget;
+
+        for (let i = 0; i < 5; i++) {
+            const t = new Date(base.getTime() + i * intervalHours * 3600 * 1000);
+            runs.push(t);
+        }
+
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+        let html = '';
+        runs.forEach((t, i) => {
+            const day = days[t.getDay()];
+            const mon = months[t.getMonth()];
+            const date = t.getDate();
+            const hour = String(t.getHours()).padStart(2, '0');
+            const min = String(t.getMinutes()).padStart(2, '0');
+            const label = i === 0 ? 'Next run' : `Run ${i + 1}`;
+            html += `
+                <div class="timeline-item">
+                    <div class="timeline-dot upcoming"></div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 0.85rem; font-weight: 500;">${label}</div>
+                        <div style="font-size: 0.72rem; color: var(--ay-muted);">${day}, ${mon} ${date} at ${hour}:${min}</div>
+                    </div>
+                    <div class="timeline-time" style="font-size: 0.78rem;">~${intervalHours * i || '< ' + intervalHours}h</div>
+                </div>`;
+        });
+
+        container.innerHTML = html;
+    }
+    renderUpcoming();
+
+    // ── Live Polling ─────────────────────────────────────────────
+    const statusIcons = {
+        done: '<i class="bi bi-check"></i>',
+        failed: '<i class="bi bi-x"></i>',
+        downloading: '<div class="spinner-border spinner-border-sm" style="width:14px;height:14px;"></div>',
+        processing: '<div class="spinner-border spinner-border-sm" style="width:14px;height:14px;"></div>',
+        uploading: '<div class="spinner-border spinner-border-sm" style="width:14px;height:14px;"></div>',
+    };
+    const statusColors = {
+        done: { bg: 'var(--ay-success-soft)', color: 'var(--ay-success)', label: '<i class="bi bi-check-circle-fill"></i> Done' },
+        failed: { bg: 'var(--ay-danger-soft)', color: 'var(--ay-danger)', label: '<i class="bi bi-x-circle-fill"></i> Failed' },
+        downloading: { bg: 'var(--ay-info-soft)', color: 'var(--ay-info)', label: 'Downloading' },
+        processing: { bg: 'var(--ay-info-soft)', color: 'var(--ay-info)', label: 'Processing' },
+        uploading: { bg: 'var(--ay-info-soft)', color: 'var(--ay-info)', label: 'Uploading' },
+        skipped: { bg: 'rgba(255,255,255,0.06)', color: 'var(--ay-muted)', label: 'Skipped' },
+        queued: { bg: 'rgba(255,255,255,0.06)', color: 'var(--ay-muted)', label: 'Queued' },
+    };
+
+    function renderQueue(queue) {
+        const container = document.getElementById('todayQueue');
+        if (!queue || queue.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-4 text-ay-muted">
+                    <i class="bi bi-inbox" style="font-size: 2rem; opacity: 0.3;"></i>
+                    <p class="mt-2 mb-0" style="font-size: 0.88rem;">No videos in queue</p>
+                </div>`;
+            return;
+        }
+
+        let html = '';
+        queue.forEach((item, idx) => {
+            const isActive = ['downloading','processing','uploading'].includes(item.status);
+            const numClass = item.status === 'done' ? 'done' : (item.status === 'failed' ? 'failed' : (isActive ? 'active' : 'queued'));
+            const icon = statusIcons[item.status] || (idx + 1);
+            const sc = statusColors[item.status] || statusColors.queued;
+            const progress = item.status === 'downloading' ? 33 : (item.status === 'processing' ? 66 : (item.status === 'uploading' ? 90 : 0));
+
+            html += `
+                <div class="sched-queue-item">
+                    <div class="sched-queue-num ${numClass}">${icon}</div>
+                    <div class="sched-queue-title">
+                        <span>${(item.title || 'Untitled').substring(0, 65)}</span>
+                        <div class="sched-queue-meta">
+                            r/${item.subreddit}
+                            ${item.author ? ' &middot; u/' + item.author : ''}
+                            ${item.duration ? ' &middot; ' + item.duration + 's' : ''}
+                        </div>
+                        ${isActive ? '<div class="sched-progress"><div class="sched-progress-bar" style="width:' + progress + '%;"></div></div>' : ''}
+                    </div>
+                    <div>
+                        <span class="sched-queue-badge" style="background: ${sc.bg}; color: ${sc.color};">${sc.label}</span>
+                    </div>
+                </div>`;
+        });
+        container.innerHTML = html;
+    }
+
+    function poll() {
+        fetch('/api/scheduler')
+            .then(r => r.json())
+            .then(data => {
+                // Update queue
+                renderQueue(data.status.queue);
+                document.getElementById('queueCountBadge').textContent = data.status.queue_summary.total + ' items';
+
+                // Update quota
+                const q = data.quota;
+                document.getElementById('quotaPercent').textContent = q.percent_used + '%';
+                document.getElementById('quotaUsed').textContent = q.used + ' / ' + q.daily_quota;
+                document.getElementById('quotaUploads').textContent = q.uploads_today;
+                document.getElementById('quotaRemaining').textContent = q.max_uploads_remaining;
+                const maxUploads = q.max_uploads_remaining + q.uploads_today;
+                document.getElementById('statQuota').textContent = q.uploads_today + '/' + maxUploads;
+
+                // Update countdown target if next_run changed
+                const newTarget = parseNextRun(data.next_run);
+                if (newTarget && (!nextRunTarget || newTarget.getTime() !== nextRunTarget.getTime())) {
+                    nextRunTarget = newTarget;
+                }
+
+                // Update navbar pipeline state if available
+                if (typeof updateNavPipelineState === 'function') {
+                    updateNavPipelineState(data.status.state, data.status.message, data.status.queue_summary.queued);
+                }
+            })
+            .catch(() => {});
+    }
+
+    setInterval(poll, 3000);
+
+    // Auto-process toggle label
+    const toggle = document.querySelector('.sched-toggle input');
+    if (toggle) {
+        toggle.addEventListener('change', function() {
+            this.closest('.sched-toggle').querySelector('.sched-toggle-label').textContent = this.checked ? 'Enabled' : 'Disabled';
+        });
+    }
+})();
+</script>
+{% endblock %}

@@ -107,6 +107,35 @@ def get_stats() -> dict:
     }
 
 
+def get_heatmap_data(weeks: int = 52) -> list[dict]:
+    """Return daily upload counts for the last N weeks, for a GitHub-style heatmap."""
+    conn = _connect()
+    cursor = conn.execute(
+        "SELECT date(uploaded_at) as day, COUNT(*) as cnt "
+        "FROM upload_history WHERE status = 'uploaded' "
+        "AND uploaded_at >= date('now', ?) "
+        "GROUP BY day ORDER BY day",
+        (f"-{weeks * 7} days",),
+    )
+    counts = {r[0]: r[1] for r in cursor.fetchall()}
+    conn.close()
+
+    from datetime import date, timedelta
+
+    today = date.today()
+    start = today - timedelta(days=weeks * 7 - 1)
+    # Align start to the previous Sunday (weekday 6 = Sunday)
+    start -= timedelta(days=(start.weekday() + 1) % 7)
+
+    days = []
+    d = start
+    while d <= today:
+        iso = d.isoformat()
+        days.append({"date": iso, "count": counts.get(iso, 0), "weekday": d.weekday()})
+        d += timedelta(days=1)
+    return days
+
+
 def get_distinct_subreddits() -> list[str]:
     """Return list of distinct subreddits from history."""
     conn = _connect()

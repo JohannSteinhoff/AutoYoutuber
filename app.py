@@ -1,14 +1,15 @@
 import logging
 import os
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 
 import config
-from history import get_history, get_history_count, get_stats, get_distinct_subreddits, search_history
+from history import get_history, get_history_count, get_heatmap_data, get_stats, get_distinct_subreddits, search_history
 from pipeline_runner import runner
 from quota import get_quota_info
-from settings_db import get_all_settings, set_many_settings
+from settings_db import get_all_settings, get_setting, set_many_settings, set_setting
 
 logger = logging.getLogger(__name__)
 
@@ -34,22 +35,35 @@ def start_scheduler():
     if _scheduler_running:
         return
 
+    interval = config.SCHEDULER_INTERVAL_HOURS
+
     def scheduled_run():
-        runner.load_queue()
+        auto = config.SCHEDULER_AUTO_PROCESS
+        count = config.VIDEOS_PER_DAY
+        runner.load_queue(count=count, auto_process=auto)
 
     scheduler.add_job(
         scheduled_run,
         "interval",
-        hours=24,
+        hours=interval,
         id="pipeline_job",
         max_instances=1,
         misfire_grace_time=3600,
         replace_existing=True,
+        next_run_time=datetime.now() + timedelta(seconds=5),
     )
     if not scheduler.running:
         scheduler.start()
     _scheduler_running = True
-    logger.info("Scheduler started: loads queue every 24 hours")
+    logger.info("Scheduler started: runs every %d hours (auto-process=%s)", interval, config.SCHEDULER_AUTO_PROCESS)
+
+
+def restart_scheduler():
+    """Restart the scheduler with updated settings."""
+    global _scheduler_running
+    if _scheduler_running:
+        stop_scheduler()
+    start_scheduler()
 
 
 def stop_scheduler():
@@ -167,6 +181,7 @@ def history_page():
         status_filter=status_filter,
         subreddits=get_distinct_subreddits(),
         stats=get_stats(),
+        heatmap=get_heatmap_data(),
     )
 
 
@@ -241,18 +256,69 @@ def queue_remove(uid):
 
 # ── Scheduler controls ─────────────────────────────────────────────
 
+@app.route("/scheduler")
+def scheduler_page():
+    return render_template(
+        "scheduler.html",
+        scheduler_running=_scheduler_running,
+        next_run=get_next_run_time(),
+        interval_hours=config.SCHEDULER_INTERVAL_HOURS,
+        auto_process=config.SCHEDULER_AUTO_PROCESS,
+        videos_per_run=config.VIDEOS_PER_DAY,
+        status=runner.get_status(),
+        quota=get_quota_info(),
+        history=get_history(limit=10),
+        subreddits=", ".join(config.SUBREDDITS),
+    )
+
+
 @app.route("/scheduler/start", methods=["POST"])
 def scheduler_start():
     start_scheduler()
     flash("Scheduler started.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(request.referrer or url_for("scheduler_page"))
 
 
 @app.route("/scheduler/stop", methods=["POST"])
 def scheduler_stop():
     stop_scheduler()
     flash("Scheduler stopped.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(request.referrer or url_for("scheduler_page"))
+
+
+@app.route("/scheduler/save", methods=["POST"])
+def scheduler_save():
+    interval = max(1, min(168, int(request.form.get("interval_hours", 24))))
+    videos = max(1, min(50, int(request.form.get("videos_per_run", 6))))
+    auto = "true" if request.form.get("auto_process") else "false"
+
+    set_many_settings({
+        "SCHEDULER_INTERVAL_HOURS": str(interval),
+        "VIDEOS_PER_DAY": str(videos),
+        "SCHEDULER_AUTO_PROCESS": auto,
+    })
+    config.reload()
+
+    if _scheduler_running:
+        restart_scheduler()
+        flash("Settings saved and scheduler restarted.", "success")
+    else:
+        flash("Settings saved.", "success")
+
+    return redirect(url_for("scheduler_page"))
+
+
+@app.route("/api/scheduler")
+def api_scheduler():
+    return jsonify({
+        "scheduler_running": _scheduler_running,
+        "next_run": get_next_run_time(),
+        "interval_hours": config.SCHEDULER_INTERVAL_HOURS,
+        "auto_process": config.SCHEDULER_AUTO_PROCESS,
+        "videos_per_run": config.VIDEOS_PER_DAY,
+        "status": runner.get_status(),
+        "quota": get_quota_info(),
+    })
 
 
 # ── YouTube OAuth ──────────────────────────────────────────────────

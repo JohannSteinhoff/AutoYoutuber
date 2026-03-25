@@ -346,6 +346,11 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'scheduler_page' %}active{% endif %}" href="/scheduler">
+                            <i class="bi bi-clock-history"></i> Scheduler
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'history_page' %}active{% endif %}" href="/history">
                             <i class="bi bi-archive"></i> History
                         </a>
